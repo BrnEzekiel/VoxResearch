@@ -74,7 +74,8 @@ export default async function handler(req, res) {
   const history = (context || []).slice(-3).map((m) => `Previous Q: ${m.content || ""}`).join("\n");
   const historyBlock = history ? `Conversation so far:\n${history}\n\n` : "";
   const vizHint = "When the answer involves a process, flow, timeline, hierarchy, or sequence, also include a ```mermaid diagram for it.";
-  const fullInput = `${langInstruction} ${lengthInstruction}\n\n${historyBlock}${vizHint}\n\nQuestion: ${query}`.trim();
+  const citeHint = "Use web search for factual questions and attach a source citation to every statistic, ranking, date and factual claim in your answer.";
+  const fullInput = `${langInstruction} ${lengthInstruction}\n\n${historyBlock}${vizHint}\n${citeHint}\n\nQuestion: ${query}`.trim();
 
   res.writeHead(200, {
     "Content-Type": "text/event-stream",

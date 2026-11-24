@@ -52,7 +52,8 @@ async def stream_research(query: str, context: list = [], language: str = "Engli
     history = "\n".join(f"Previous Q: {m.get('content', '')}" for m in (context or [])[-3:])
     history_block = f"Conversation so far:\n{history}\n\n" if history else ""
     viz_hint = "When the answer involves a process, flow, timeline, hierarchy, or sequence, also include a ```mermaid diagram for it."
-    full_input = f"{lang_instruction} {length_instruction}\n\n{history_block}{viz_hint}\n\nQuestion: {query}".strip()
+    cite_hint = "Use web search for factual questions and attach a source citation to every statistic, ranking, date and factual claim in your answer."
+    full_input = f"{lang_instruction} {length_instruction}\n\n{history_block}{viz_hint}\n{cite_hint}\n\nQuestion: {query}".strip()
 
     payload = {
         "model": "muse-spark-1.3",

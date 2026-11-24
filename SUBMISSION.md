@@ -164,3 +164,11 @@ search grounding, Muse Voice Transcribe, Edge Config for the quota store.
 4. **Submit** — Devpost → Enter a Submission → category Frankenstein,
    repo URL, app URL https://voxresearch-app.vercel.app,
    description + video + write-up from this file. Save early, edit later.
+
+
+
+
+
+
+
+Kiro, React, Vite, Tailwind CSS, JavaScript, Python, FastAPI, Node.js, Vercel, Vercel, Edge, Config, Meta Muse Spark, Muse Voice, Transcribe, Web Audio API, Mermaid, Server-Sent Events, jsPDF, PWA
