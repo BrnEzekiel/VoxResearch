@@ -104,12 +104,9 @@ export default function App() {
   const [dataKey, setDataKey] = useState(0);
   const [previewImg, setPreviewImg] = useState(null);
   const [attachSpin, setAttachSpin] = useState(false);
-  const [autoScroll, setAutoScroll] = useState(true);
-  const [showTop, setShowTop] = useState(false);
   const [attachment, setAttachment] = useState(null);
   const bottomRef = useRef(null);
   const inputRef = useRef(null);
-  const mainRef = useRef(null);
   const abortRef = useRef(null);
   const sessionsRef = useRef(sessions);
   sessionsRef.current = sessions;
@@ -151,8 +148,8 @@ export default function App() {
   // Applied to <html> so every rem-based size in the app scales together.
   useEffect(() => { document.documentElement.style.fontSize = `${fontSize}px`; }, [fontSize]);
   useEffect(() => {
-    if (autoScroll) bottomRef.current?.scrollIntoView({ behavior: loading ? "auto" : "smooth" });
-  }, [turns, loading, autoScroll]);
+    bottomRef.current?.scrollIntoView({ behavior: loading ? "auto" : "smooth" });
+  }, [turns, loading]);
 
   useEffect(() => {
     const on = () => setOffline(false);
@@ -177,13 +174,8 @@ export default function App() {
     if (q) doSearch(q);
   }, []);
 
-  // Rail (48px) shows only when sidebar is closed; sidebar slides in from the very edge
-  useEffect(() => {
-    if (mainRef.current) {
-      mainRef.current.style.marginLeft = sidebarOpen ? "288px" : "48px";
-      mainRef.current.style.transition = "margin-left 0.3s ease";
-    }
-  }, [sidebarOpen]);
+  // Desktop: content sits right of the rail (48px) or sidebar (288px).
+  // Mobile: full width, sidebar overlays. Pure CSS below, no JS measuring.
 
   function handleQueryChange(val) {
     setQuery(val);
@@ -401,16 +393,6 @@ export default function App() {
     if (url) setPreviewImg({ name: attachment.name, url });
   }
 
-  useEffect(() => {
-    const onScroll = () => setShowTop(window.scrollY > 600);
-    window.addEventListener("scroll", onScroll, { passive: true });
-    return () => window.removeEventListener("scroll", onScroll);
-  }, []);
-
-  function scrollToTop() {
-    window.scrollTo({ top: 0, behavior: "smooth" });
-  }
-
   function toggleSidebar(tab) {
     if (sidebarOpen && sidebarTab === tab) setSidebarOpen(false);
     else { setSidebarTab(tab); setSidebarOpen(true); }
@@ -431,8 +413,8 @@ export default function App() {
 
       {showShortcuts && <ShortcutOverlay dark={darkMode} onClose={() => setShowShortcuts(false)} />}
 
-      {/* Icon rail — hamburger top opens history, gear bottom opens settings. Hidden while sidebar is open. */}
-      <div className={`fixed left-0 top-0 h-full w-12 z-40 flex-col items-center justify-between py-3 ${darkMode ? "bg-gray-950" : "bg-white"} ${sidebarOpen ? "hidden" : "flex"}`}>
+      {/* Icon rail — desktop only; mobile uses the top-bar buttons. Hidden while sidebar is open. */}
+      <div className={`fixed left-0 top-0 h-full w-12 z-40 flex-col items-center justify-between py-3 ${darkMode ? "bg-gray-950" : "bg-white"} ${sidebarOpen ? "hidden" : "hidden md:flex"}`}>
         <button onClick={() => toggleSidebar("history")} title="Chats" className={railBtn(sidebarOpen && sidebarTab === "history")}>
           <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16"/>
@@ -471,24 +453,25 @@ export default function App() {
         tab={sidebarTab} onTab={setSidebarTab}
       />
 
-      {/* Main — shifts right when sidebar opens */}
-      <div ref={mainRef} className="flex flex-col min-h-screen">
+      {/* Main — shifts right when sidebar opens (desktop only) */}
+      <div className={`flex flex-col min-h-screen ml-0 transition-all duration-300 ${sidebarOpen ? "md:ml-72" : "md:ml-12"}`}>
         {offline && <div className="w-full bg-red-500 text-white text-xs text-center py-1.5 z-50">You are offline</div>}
 
-        {/* Top bar — centered title, language + length only */}
-        <div className={`sticky top-0 z-10 w-full px-5 py-2.5 flex items-center ${topBar} backdrop-blur`}>
-          <div className="flex-1 min-w-0" />
+        {/* Top bar — title left, controls right; neither can ever overlap */}
+        <div className={`sticky top-0 z-10 w-full px-4 sm:px-5 py-2.5 flex items-center gap-2 ${topBar} backdrop-blur`}>
+          <button onClick={() => toggleSidebar("history")} title="Chats"
+            className={`md:hidden p-2 -ml-2 rounded-lg transition ${darkMode ? "text-gray-400" : "text-gray-500"}`}>
+            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16"/>
+            </svg>
+          </button>
+          <span className={`flex-1 min-w-0 truncate text-left text-base sm:text-lg font-bold tracking-tight ${accent.text}`}
+            style={{ textShadow: `0 0 20px ${accent.hex}40` }}>
+            VoxResearch
+          </span>
 
-          {/* Center: title — shrinks instead of ever overlapping the controls */}
-          <div className="flex-shrink min-w-0 px-2 text-center">
-            <span className={`block truncate text-base sm:text-lg font-bold tracking-tight ${accent.text}`}
-              style={{ textShadow: `0 0 20px ${accent.hex}40` }}>
-              VoxResearch
-            </span>
-          </div>
-
-          {/* Right: language, length, clear — never shrinks under the title */}
-          <div className="flex-1 flex items-center justify-end gap-2 flex-shrink-0 min-w-0">
+          {/* Right: language, length, clear — exact size, never squeezed */}
+          <div className="flex-none flex items-center gap-2">
             <select value={language} onChange={e => setLanguage(e.target.value)}
               className={`text-xs rounded-lg border px-2 py-1 bg-transparent ${darkMode ? "border-gray-700 text-gray-300" : "border-gray-200 text-gray-600"}`}>
               {["English","Swahili","French","Spanish","German","Arabic","Hindi"].map(l => <option key={l}>{l}</option>)}
@@ -548,20 +531,6 @@ export default function App() {
             {transcript && <p className={`text-xs mt-3 ${mutedText}`}>Heard: "{transcript}"</p>}
             <div ref={bottomRef} />
           </div>
-        </div>
-
-        {/* Floating scroll controls */}
-        <div className="fixed bottom-28 right-6 z-20 flex flex-col gap-2">
-          <button onClick={() => setAutoScroll(v => !v)} title={autoScroll ? "Pause auto-scroll" : "Resume auto-scroll"}
-            className={`w-9 h-9 rounded-full border shadow-lg text-sm transition ${autoScroll ? accent.btn + " text-white border-transparent" : darkMode ? "bg-gray-900 border-gray-700 text-gray-400" : "bg-white border-gray-200 text-gray-400"}`}>
-            {autoScroll ? "▼" : "⏸"}
-          </button>
-          {showTop && (
-            <button onClick={scrollToTop} title="Back to top"
-              className={`w-9 h-9 rounded-full border shadow-lg text-sm transition ${darkMode ? "bg-gray-900 border-gray-700 text-gray-300 hover:text-white" : "bg-white border-gray-200 text-gray-500 hover:text-gray-800"}`}>
-              ▲
-            </button>
-          )}
         </div>
 
         {/* Batch modal */}
