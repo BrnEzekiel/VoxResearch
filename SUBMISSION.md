@@ -88,7 +88,73 @@ Upload to YouTube as **public**, paste the link in the form.
 
 ---
 
-## 4. Your tasks (only you can do these)
+## 4. Project story (Devpost "About the project" field)
+
+## Inspiration
+Research today means juggling a search engine, a chatbot, a charting tool and a
+PDF exporter — and trusting answers with no sources. I wanted one creature that
+does the whole loop: I speak, it answers with proof, visualizes the answer, and
+hands me a document. Halloween season made the theme obvious: stitch together
+technologies that were never designed to meet, and reanimate them as one
+assistant. That's VoxResearch, built for the Frankenstein category.
+
+## What it does
+Speak or type any question. Browser audio is converted to WAV in-app and
+transcribed by Meta's Muse Voice Transcribe; Muse Spark 1.3 then streams back
+a search-grounded answer with real, hoverable citations. A detection engine
+offers 90+ presentation formats on demand — charts, sortable tables, timelines,
+flowcharts, maps, math, checklists, FAQs and more. Any answer or full session
+exports to a branded PDF with diagrams rendered as true images. Chats live in
+sessions with pins, rename, search and duplicate, and a fingerprint-based quota
+(10 free messages per device, enforced server-side) makes the free tier real.
+
+## How we built it
+Spec-first in **Kiro Crew**: `.kiro/specs/voxresearch.md` captured every
+requirement before code existed, `.kiro/steering/stack.md` pinned the stack
+across 50+ generated features, and `.kiro/hooks/pre-commit.json` kept API keys
+out of git. Two landmark Crew sessions shipped a 20-feature round and a
+30-feature round. Stack: React + Vite + Tailwind frontend, Vercel serverless
+functions (Node) for `/research` and `/transcribe`, Meta Muse Spark 1.3 with
+search grounding, Muse Voice Transcribe, Edge Config for the quota store.
+
+## Challenges we ran into
+- Meta's API refused Render's entire network (`model_not_found` from US and EU
+  regions) while working from everywhere else — diagnosed with packet-level
+  probes and fixed by moving the backend onto Vercel serverless.
+- Meta's speech endpoint only accepts WAV, but browsers record WebM — solved
+  with in-browser Web Audio resampling to 16 kHz mono PCM.
+- The streaming event format was undocumented; raw-stream captures revealed
+  string deltas and commentary-phase chatter, which the parser now handles while
+  hiding thinking noise from users.
+- A free subdomain couldn't be verified on three different hosts (parent-domain
+  proof, zone claims, DNS caches) — so the app ships on its own Vercel address
+  with the backend on the same origin.
+
+## Accomplishments that we're proud of
+- True word-by-word streaming with citations harvested live from the stream.
+- A 90-format visualization engine where nothing renders until requested.
+- PDF export with pixel parity to the chat, diagrams included.
+- A wipe-proof free tier: clearing the browser doesn't reset the count.
+- Full mobile hardening: batched renders, zero horizontal scroll, overlay menus.
+
+## What we learned
+- Specs beat vibes: every session that started from the spec file shipped
+  coherent, mergeable work; steering docs are code review that runs before the
+  code exists.
+- Never trust an API's happy path: probe raw responses early (it caught the
+  delta format, the WAV-only rule, and the Render block).
+- Constraints breed craft: the 60-second serverless limit forced parallel
+  API calls and render batching that made the app faster for everyone.
+
+## What's next for VoxResearch
+- Custom domains done right (proper root domain with verified DNS).
+- More visualization packs (3D charts, interactive maps).
+- Shared session links and team workspaces.
+- Usage-based tiers on top of the device quota.
+
+---
+
+## 5. Your tasks (only you can do these)
 
 1. **Video** — record + upload per script above (~30 min).
 2. **Social Blitz** — post on X/LinkedIn starting with `#KiroweenHackathon26`,
