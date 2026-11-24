@@ -56,7 +56,7 @@ export default function VoiceButton({ onRecorded, disabled, dark }) {
       onClick={toggle}
       disabled={disabled}
       title={recording ? "Stop recording" : "Record voice"}
-      className={`relative px-4 py-3 rounded-xl font-semibold transition flex items-center gap-1 ${
+      className={`relative flex-shrink-0 px-4 py-3 rounded-xl font-semibold transition flex items-center gap-1 ${
         recording
           ? "bg-red-600 hover:bg-red-500"
           : dark ? "bg-gray-700 hover:bg-gray-600" : "bg-orange-100 hover:bg-orange-200"

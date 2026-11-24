@@ -40,12 +40,8 @@ export default async function handler(req, res) {
       send(res, req, 400, { error: "empty audio" });
       return;
     }
-    const ml = String(mime || "").toLowerCase();
-    const audioEncoding = ml.includes("wav") ? "WAV"
-      : ml.includes("mp3") || ml.includes("mpeg") ? "MP3"
-      : ml.includes("ogg") || ml.includes("opus") ? "OGG"
-      : ml.includes("mp4") || ml.includes("m4a") || ml.includes("aac") ? "MP4"
-      : "WEBM";
+    // Meta's file endpoint only accepts WAV — the frontend converts first.
+    const audioEncoding = "WAV";
     const form = new FormData();
     form.append("request", new Blob([JSON.stringify({ model: "muse-voice-transcribe-1.0", audioEncoding })], { type: "application/json" }));
     form.append("audio", new Blob([bytes], { type: mime }), filename);

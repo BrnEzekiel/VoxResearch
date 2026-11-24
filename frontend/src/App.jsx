@@ -8,6 +8,8 @@ import KiroTimeline from "./components/KiroTimeline";
 import ShortcutOverlay from "./components/ShortcutOverlay";
 import DataPanel from "./components/DataPanel";
 import { exportConversationPDF } from "./utils/exportPDF";
+import { getMessagesLeft, recordMessage, reconcileQuota, MESSAGE_LIMIT } from "./utils/deviceQuota";
+import { blobToWavDataUrl } from "./utils/audioToWav";
 
 const SUGGESTIONS = [
   "What is quantum computing?","Latest news in artificial intelligence",
@@ -105,6 +107,7 @@ export default function App() {
   const [previewImg, setPreviewImg] = useState(null);
   const [attachSpin, setAttachSpin] = useState(false);
   const [attachment, setAttachment] = useState(null);
+  const [quotaLeft, setQuotaLeft] = useState(() => getMessagesLeft());
   const bottomRef = useRef(null);
   const inputRef = useRef(null);
   const abortRef = useRef(null);
@@ -174,6 +177,8 @@ export default function App() {
     if (q) doSearch(q);
   }, []);
 
+  useEffect(() => { reconcileQuota().then(setQuotaLeft); }, []);
+
   // Desktop: content sits right of the rail (48px) or sidebar (288px).
   // Mobile: full width, sidebar overlays. Pure CSS below, no JS measuring.
 
@@ -185,6 +190,10 @@ export default function App() {
   async function doSearch(text, isCompare = false) {
     const q = (text || query).trim();
     if (!q) return;
+    if (!isCompare && getMessagesLeft() <= 0) {
+      setError(`You've used your ${MESSAGE_LIMIT} free messages on this device.`);
+      return;
+    }
     setSuggestions([]);
     if (!isCompare) setQuery("");
     setLoading(true); setError(null);
@@ -208,6 +217,11 @@ export default function App() {
     const setter = isCompare
       ? fn => setCompareTurns(prev => prev.map(t => t.id === turnId ? fn(t) : t))
       : fn => updateTurns(prev => prev.map(t => t.id === turnId ? fn(t) : t));
+    // Count the message once real content arrives (failed sends stay free).
+    let counted = false;
+    const countOnce = () => {
+      if (!counted && !isCompare) { counted = true; setQuotaLeft(recordMessage()); }
+    };
 
     abortRef.current = new AbortController();
     try {
@@ -233,10 +247,10 @@ export default function App() {
           const raw = line.slice(5).trim(); if (!raw) continue;
           try {
             const msg = JSON.parse(raw);
-            if (msg.type === "token") setter(t => ({ ...t, streaming: (t.streaming || "") + msg.text }));
+            if (msg.type === "token") { countOnce(); setter(t => ({ ...t, streaming: (t.streaming || "") + msg.text })); }
             else if (msg.type === "citations") setter(t => ({ ...t, citations: msg.data, grounded: true }));
-            else if (msg.type === "related") setter(t => ({ ...t, related: msg.data }));
-            else if (msg.type === "done") setter(t => ({ ...t, answer: t.streaming, streaming: "" }));
+            else if (msg.type === "related") { countOnce(); setter(t => ({ ...t, related: msg.data })); }
+            else if (msg.type === "done") { countOnce(); setter(t => ({ ...t, answer: t.streaming, streaming: "" })); }
             else if (msg.type === "error") throw new Error(msg.text);
           } catch (_) {}
         }
@@ -269,16 +283,12 @@ export default function App() {
   async function handleVoice(audioBlob) {
     setLoading(true); setError(null); setTranscript("");
     try {
-      const dataUrl = await new Promise((resolve, reject) => {
-        const r = new FileReader();
-        r.onload = () => resolve(r.result);
-        r.onerror = reject;
-        r.readAsDataURL(audioBlob);
-      });
+      // Meta only accepts WAV — convert the browser's WebM recording first.
+      const dataUrl = await blobToWavDataUrl(audioBlob);
       const res = await fetch(`${API_BASE}/transcribe`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ audio: dataUrl, filename: "recording.webm", mime: audioBlob.type || "audio/webm" }),
+        body: JSON.stringify({ audio: dataUrl, filename: "recording.wav", mime: "audio/wav" }),
       });
       if (!res.ok) throw new Error(await res.text());
       const data = await res.json(); setTranscript(data.transcript);
@@ -512,7 +522,7 @@ export default function App() {
             )}
 
             {compareMode ? (
-              <div className="grid grid-cols-2 gap-10">
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-10">
                 <div>
                   <p className={`text-xs font-semibold uppercase tracking-widest mb-6 ${mutedText}`}>Column A</p>
                   {turns.map(t => <TurnBlock key={t.id} turn={t} dark={darkMode} accent={accent} userBubble={userBubble} onRelated={doSearch} onShare={handleShare} shareMsg={shareMsg} onSaveMd={saveMarkdown} ratings={ratings} onRate={(id,v) => setRatings(r=>({...r,[id]:v}))} onReSearch={doSearch} />)}
@@ -597,12 +607,12 @@ export default function App() {
             </div>
           )}
           <div className="flex gap-2">
-            <div className="flex-1 relative"
+            <div className="flex-1 min-w-0 relative"
               onDragOver={e => e.preventDefault()}
               onDrop={e => { e.preventDefault(); handleFile(e.dataTransfer.files?.[0]); }}>
               <input
                 ref={inputRef}
-                className={`w-full rounded-2xl border pl-5 pr-12 py-3 text-sm focus:outline-none focus:ring-2 transition ${accent.ring} ${inputBg}`}
+                className={`w-full max-w-full rounded-2xl border pl-12 pr-5 py-3 text-sm focus:outline-none focus:ring-2 transition ${accent.ring} ${inputBg}`}
                 placeholder="Ask anything... (drop files or paste screenshots)"
                 value={query} onChange={e => handleQueryChange(e.target.value)}
                 onKeyDown={e => {
@@ -618,7 +628,7 @@ export default function App() {
               <button
                 onClick={() => { setAttachSpin(true); setTimeout(() => { document.getElementById("file-attach-input").click(); setAttachSpin(false); }, 350); }}
                 title="Attach any file"
-                className={`absolute right-2 top-1/2 -translate-y-1/2 w-8 h-8 rounded-full border text-lg leading-none transition-transform duration-300 ${attachSpin ? "rotate-180" : ""} ${darkMode ? "border-gray-700 text-gray-400 hover:text-gray-200" : "border-gray-200 text-gray-400 hover:text-gray-600"}`}>+</button>
+                className={`absolute left-2 top-1/2 -translate-y-1/2 w-8 h-8 rounded-full border text-lg leading-none transition-transform duration-300 ${attachSpin ? "rotate-180" : ""} ${darkMode ? "border-gray-700 text-gray-400 hover:text-gray-200" : "border-gray-200 text-gray-400 hover:text-gray-600"}`}>+</button>
               <input id="file-attach-input" type="file" className="hidden" onChange={e => {
                 const f = e.target.files?.[0];
                 e.target.value = "";
@@ -635,12 +645,12 @@ export default function App() {
             </div>
             {loading ? (
               <button onClick={stopSearch} title="Stop generating"
-                className="bg-red-500 hover:bg-red-400 text-white font-semibold px-5 py-3 rounded-2xl transition text-sm">
+                className="flex-shrink-0 bg-red-500 hover:bg-red-400 text-white font-semibold px-5 py-3 rounded-2xl transition text-sm">
                 ■ Stop
               </button>
             ) : (
               <button onClick={() => doSearch()} disabled={!query.trim()}
-                className={`${accent.btn} disabled:opacity-40 text-white font-semibold px-5 py-3 rounded-2xl transition text-sm`}>
+                className={`flex-shrink-0 ${accent.btn} disabled:opacity-40 text-white font-semibold px-5 py-3 rounded-2xl transition text-sm`}>
                 Send
               </button>
             )}
@@ -649,7 +659,7 @@ export default function App() {
           <div className="flex items-center justify-between mt-2">
             <span className={`text-[11px] ${mutedText}`}>{query.length > 0 ? `${query.length} chars` : ""}</span>
             <p className={`text-[11px] ${mutedText}`}>AI can make mistakes. Verify important information.</p>
-            <span className={`text-[11px] ${mutedText}`}>{turns.length > 0 ? `${turns.length} message${turns.length === 1 ? "" : "s"}` : ""}</span>
+            <span className={`text-[11px] ${quotaLeft <= 2 ? "text-red-500 font-semibold" : mutedText}`}>{quotaLeft} of {MESSAGE_LIMIT} free left</span>
           </div>
         </div>
       </div>
@@ -663,8 +673,8 @@ const TurnBlock = memo(function TurnBlock({ turn, dark, accent, userBubble, onRe
   return (
     <div className="mb-12">
       {/* User bubble — right aligned */}
-      <div className="flex justify-end mb-5">
-        <div className={`max-w-xl px-5 py-3 rounded-2xl rounded-tr-sm text-sm font-medium leading-relaxed ${userBubble}`}>
+      <div className="flex justify-end mb-5 min-w-0">
+        <div className={`min-w-0 max-w-full sm:max-w-xl px-5 py-3 rounded-2xl rounded-tr-sm text-sm font-medium leading-relaxed break-words ${userBubble}`}>
           {turn.attachment && (
             <span className="flex items-center gap-2 mb-2 pb-2 border-b border-white/25 text-xs font-normal">
               {turn.attachment.kind === "image" && imageStore.get(turn.attachment.id)

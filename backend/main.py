@@ -196,17 +196,8 @@ async def transcribe(request: Request):
         f = form["audio"]
         audio_bytes = await f.read()
         filename, mime = f.filename, f.content_type
-    ml = (mime or "").lower()
-    if "wav" in ml:
-        audio_encoding = "WAV"
-    elif "mp3" in ml or "mpeg" in ml:
-        audio_encoding = "MP3"
-    elif "ogg" in ml or "opus" in ml:
-        audio_encoding = "OGG"
-    elif "mp4" in ml or "m4a" in ml or "aac" in ml:
-        audio_encoding = "MP4"
-    else:
-        audio_encoding = "WEBM"
+    # Meta's file endpoint only accepts WAV — the frontend converts first.
+    audio_encoding = "WAV"
     async with httpx.AsyncClient(timeout=60) as client:
         resp = await client.post(
             f"{META_BASE}/asr/transcribe",
