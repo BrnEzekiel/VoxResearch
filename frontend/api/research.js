@@ -23,7 +23,8 @@ function extractTextAndCitations(payload) {
 
 export default async function handler(req, res) {
   if (req.method !== "POST") {
-    res.status(405).json({ error: "POST only" });
+    res.writeHead(405, { "Content-Type": "application/json" });
+    res.end(JSON.stringify({ error: "POST only" }));
     return;
   }
   const key = process.env.META_API_KEY || "";
@@ -95,6 +96,43 @@ export default async function handler(req, res) {
     });
     if (r.ok && r.body) {
       streamOk = true;
+      const commentaryIds = new Set();
+      const harvest = (output) => {
+        for (const item of output || []) {
+          if (item.type !== "message") continue;
+          for (const c of item.content || []) {
+            if (c.type === "output_text" && c.annotations) {
+              for (const a of c.annotations) {
+                if (a.url && !citations.some((x) => x.url === a.url)) citations.push(a);
+              }
+            }
+          }
+        }
+      };
+      const handleLine = (line) => {
+        if (!line.startsWith("data:")) return;
+        const raw = line.slice(5).trim();
+        if (!raw || raw === "[DONE]") return;
+        let chunk;
+        try { chunk = JSON.parse(raw); } catch { return; }
+        const t = chunk.type || "";
+        // Track commentary-phase items so thinking chatter stays hidden.
+        if (t === "response.output_item.added" && chunk.item && chunk.item.phase === "commentary" && chunk.item.id) {
+          commentaryIds.add(chunk.item.id);
+          return;
+        }
+        // Real text deltas: plain strings on output_text.delta events.
+        if (t === "response.output_text.delta") {
+          const d = chunk.delta;
+          if (typeof d === "string" && d && !commentaryIds.has(chunk.item_id)) {
+            res.write(sse({ type: "token", text: d }));
+          }
+          return;
+        }
+        // Citations ride on the completed event (and legacy output shapes).
+        if (chunk.response && Array.isArray(chunk.response.output)) harvest(chunk.response.output);
+        else harvest(chunk.output);
+      };
       const reader = r.body.getReader();
       const decoder = new TextDecoder();
       let buffer = "";
@@ -104,26 +142,10 @@ export default async function handler(req, res) {
         buffer += decoder.decode(value, { stream: true });
         const lines = buffer.split("\n");
         buffer = lines.pop();
-        for (const line of lines) {
-          if (!line.startsWith("data:")) continue;
-          const raw = line.slice(5).trim();
-          if (!raw || raw === "[DONE]") continue;
-          let chunk;
-          try { chunk = JSON.parse(raw); } catch { continue; }
-          let delta = "";
-          for (const item of chunk.output || []) {
-            if (item.type !== "message") continue;
-            for (const c of item.content || []) {
-              if (c.type === "output_text") {
-                delta = c.text || "";
-                if (c.annotations) citations = c.annotations;
-              }
-            }
-          }
-          delta = delta || (chunk.delta && chunk.delta.text) || "";
-          if (delta) res.write(sse({ type: "token", text: delta }));
-        }
+        for (const line of lines) handleLine(line);
       }
+      buffer += decoder.decode();
+      if (buffer.trim()) handleLine(buffer.trim());
     }
   } catch { streamOk = false; }
 

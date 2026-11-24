@@ -5,9 +5,14 @@ const META_BASE = "https://api.meta.ai/v1";
 
 export const config = { maxDuration: 60, api: { bodyParser: { sizeLimit: "10mb" } } };
 
+const send = (res, code, obj) => {
+  res.writeHead(code, { "Content-Type": "application/json" });
+  res.end(JSON.stringify(obj));
+};
+
 export default async function handler(req, res) {
   if (req.method !== "POST") {
-    res.status(405).json({ error: "POST only" });
+    send(res, 405, { error: "POST only" });
     return;
   }
   const key = process.env.META_API_KEY || "";
@@ -16,25 +21,31 @@ export default async function handler(req, res) {
     const b64 = String(audio).includes(",") ? String(audio).split(",").pop() : String(audio);
     const bytes = Buffer.from(b64, "base64");
     if (bytes.length === 0) {
-      res.status(400).json({ error: "empty audio" });
+      send(res, 400, { error: "empty audio" });
       return;
     }
+    const ml = String(mime || "").toLowerCase();
+    const audioEncoding = ml.includes("wav") ? "WAV"
+      : ml.includes("mp3") || ml.includes("mpeg") ? "MP3"
+      : ml.includes("ogg") || ml.includes("opus") ? "OGG"
+      : ml.includes("mp4") || ml.includes("m4a") || ml.includes("aac") ? "MP4"
+      : "WEBM";
     const form = new FormData();
-    form.append("file", new Blob([bytes], { type: mime }), filename);
-    form.append("model", "muse-voice-transcribe-1.0");
+    form.append("request", new Blob([JSON.stringify({ model: "muse-voice-transcribe-1.0", audioEncoding })], { type: "application/json" }));
+    form.append("audio", new Blob([bytes], { type: mime }), filename);
     const r = await fetch(`${META_BASE}/asr/transcribe`, {
       method: "POST",
       headers: { Authorization: `Bearer ${key}` },
       body: form,
     });
     if (!r.ok) {
-      res.status(r.status).json({ error: await r.text() });
+      send(res, r.status, { error: await r.text() });
       return;
     }
     const result = await r.json();
     const transcript = (result.turns || []).map((t) => t.text || "").join(" ");
-    res.status(200).json({ transcript });
+    send(res, 200, { transcript });
   } catch (e) {
-    res.status(500).json({ error: String((e && e.message) || e) });
+    send(res, 500, { error: String((e && e.message) || e) });
   }
 }

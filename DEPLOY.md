@@ -1,51 +1,40 @@
-# Publish VoxResearch on voxresearch.work.gd (all free)
+# VoxResearch is live on Vercel (site + backend in one project)
 
-The app has two halves: the page you see (frontend) and the brain (backend).
-They go on two free hosts, then your domain points at the page.
+Everything runs on Vercel: the page plus two serverless functions
+(`frontend/api/research.js`, `frontend/api/transcribe.js`) that talk to Meta's API.
+There is no separate backend host. Local dev still uses `backend/` (FastAPI on :8000).
 
-## 1. Push this folder to GitHub (one time)
+## Redeploy after code changes
 
-1. Go to github.com/new, name it `voxresearch`, Create repository.
-2. In a terminal inside this folder:
-   ```
-   git remote add origin https://github.com/YOURNAME/voxresearch.git
-   git branch -M main
-   git push -u origin main
-   ```
-   Your API key is NOT in the repo (`.env` is ignored). Safe to push.
+From the `frontend/` folder:
 
-## 2. Put the brain on Render (free)
+```
+npx vercel --prod
+```
 
-1. Go to render.com, sign up with GitHub.
-2. New + → Blueprint → pick the `voxresearch` repo. It reads `render.yaml`.
-3. It asks for `META_API_KEY`: open `backend\.env` on your PC, copy the key
-   after `META_API_KEY=`, paste it. Deploy.
-4. When live, copy your API address, something like
-   `https://voxresearch-api.onrender.com`. Test it: open
-   `https://voxresearch-api.onrender.com/health` — you should see `{"status":"ok"}`.
-   (Free Render sleeps when idle; first answer of the day takes ~50s to wake up.)
+(That's it. The project is already linked.)
 
-## 3. Put the page on Vercel (free)
+## Environment
 
-1. Go to vercel.com, sign up with GitHub.
-2. Add New → Project → Import the `voxresearch` repo.
-3. Root Directory: `frontend`. Framework: Vite (auto-detected).
-4. Environment Variables: add `VITE_API_URL` = your Render address from step 2
-   (no trailing slash). Deploy.
-5. Open the vercel.app link it gives you and ask something. If answers stream,
-   frontend + backend are talking.
+- `META_API_KEY` is set on the Vercel project (production + preview).
+  Never commit `backend/.env` — it's git-ignored.
+- The frontend calls same-origin `/api/*` in production, `http://localhost:8000`
+  in local dev. `VITE_API_URL` overrides both when set.
 
-## 4. Point your domain at the page
+## Domain
 
-1. In Vercel: Project → Settings → Domains → add `voxresearch.work.gd`
-   and `www.voxresearch.work.gd`. Vercel shows the DNS records it wants
-   (an A record for `@`, and www pointing at it).
-2. In your freedomain.one DNS panel for voxresearch.work.gd:
-   - Edit the Host/A record `voxresearch.work.gd.` → change the IP to Vercel's.
-   - `www` CNAME already points at the root — leave it.
-3. Wait 5–30 minutes, then open https://voxresearch.work.gd. Done.
+`voxresearch.work.gd` + `www` are attached to the Vercel project.
+DNS (freedomain.one panel):
 
-## Later changes
+- `@` A → `216.198.79.1` and (second row) `64.29.17.1`
+- `www` CNAME → `f2db8d2bdf22ca9d.vercel-dns-017.com`
 
-Just push to GitHub (`git add -A; git commit -m "..."; git push`) —
-Render and Vercel redeploy automatically.
+## Notes
+
+- The temporary `*.vercel.app` URLs are team-login protected (SSO);
+  the custom domain is fully public. Don't remove the SSO setting.
+- Serverless functions time out at 60s; related questions run in parallel
+  with the answer stream to stay well under that.
+- Meta's API refuses Render's network (model_not_found from any Render
+  region) but works from Vercel and residential IPs. Don't move the
+  backend back to Render.

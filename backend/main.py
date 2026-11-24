@@ -63,6 +63,17 @@ async def stream_research(query: str, context: list = [], language: str = "Engli
 
     full_text = ""
     citations = []
+    commentary_ids = set()
+
+    def harvest(output):
+        for item in output or []:
+            if item.get("type") != "message":
+                continue
+            for c in item.get("content", []):
+                if c.get("type") == "output_text" and c.get("annotations"):
+                    for a in c["annotations"]:
+                        if a.get("url") and not any(x.get("url") == a["url"] for x in citations):
+                            citations.append(a)
 
     try:
         async with httpx.AsyncClient(timeout=90) as client:
@@ -84,23 +95,26 @@ async def stream_research(query: str, context: list = [], language: str = "Engli
                     except Exception:
                         continue
 
-                    # Text delta
-                    delta = ""
-                    for item in chunk.get("output", []):
-                        if item.get("type") == "message":
-                            for c in item.get("content", []):
-                                if c.get("type") == "output_text":
-                                    delta = c.get("text", "")
-                                    anns = c.get("annotations", [])
-                                    if anns:
-                                        citations = anns
-
-                    # Some APIs send delta directly
-                    delta = delta or chunk.get("delta", {}).get("text", "")
-
-                    if delta:
-                        full_text += delta
-                        yield f"data: {json.dumps({'type': 'token', 'text': delta})}\n\n"
+                    t = chunk.get("type", "")
+                    # Track commentary-phase items so thinking chatter stays hidden.
+                    if t == "response.output_item.added":
+                        item = chunk.get("item", {})
+                        if item.get("phase") == "commentary" and item.get("id"):
+                            commentary_ids.add(item["id"])
+                        continue
+                    # Real text deltas: plain strings on output_text.delta events.
+                    if t == "response.output_text.delta":
+                        d = chunk.get("delta", "")
+                        if isinstance(d, str) and d and chunk.get("item_id") not in commentary_ids:
+                            full_text += d
+                            yield f"data: {json.dumps({'type': 'token', 'text': d})}\n\n"
+                        continue
+                    # Citations ride on the completed event (and legacy output shapes).
+                    resp_obj = chunk.get("response") or {}
+                    if isinstance(resp_obj.get("output"), list):
+                        harvest(resp_obj["output"])
+                    else:
+                        harvest(chunk.get("output"))
 
     except Exception as e:
         # Non-streaming fallback
@@ -182,12 +196,23 @@ async def transcribe(request: Request):
         f = form["audio"]
         audio_bytes = await f.read()
         filename, mime = f.filename, f.content_type
+    ml = (mime or "").lower()
+    if "wav" in ml:
+        audio_encoding = "WAV"
+    elif "mp3" in ml or "mpeg" in ml:
+        audio_encoding = "MP3"
+    elif "ogg" in ml or "opus" in ml:
+        audio_encoding = "OGG"
+    elif "mp4" in ml or "m4a" in ml or "aac" in ml:
+        audio_encoding = "MP4"
+    else:
+        audio_encoding = "WEBM"
     async with httpx.AsyncClient(timeout=60) as client:
         resp = await client.post(
             f"{META_BASE}/asr/transcribe",
             headers={"Authorization": f"Bearer {META_API_KEY}"},
-            files={"file": (filename, audio_bytes, mime)},
-            data={"model": "muse-voice-transcribe-1.0"},
+            files={"audio": (filename, audio_bytes, mime)},
+            data={"request": json.dumps({"model": "muse-voice-transcribe-1.0", "audioEncoding": audio_encoding})},
         )
         if resp.status_code != 200:
             raise HTTPException(status_code=resp.status_code, detail=resp.text)
