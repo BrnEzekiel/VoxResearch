@@ -1,18 +1,19 @@
-# VoxResearch is live on Vercel (site + backend in one project)
+# VoxResearch — live at https://voxresearch-app.vercel.app
 
-Everything runs on Vercel: the page plus two serverless functions
+(`voxresearch.vercel.app` itself is taken by someone else on Vercel.)
+
+Everything runs on one Vercel project: the page plus two serverless functions
 (`frontend/api/research.js`, `frontend/api/transcribe.js`) that talk to Meta's API.
-There is no separate backend host. Local dev still uses `backend/` (FastAPI on :8000).
+Local dev still uses `backend/` (FastAPI on :8000).
 
-## Redeploy after code changes
+## Deploys
 
-From the `frontend/` folder:
+The Vercel project is linked to this GitHub repo (root directory `frontend`).
+Pushing to `main` auto-deploys. Manual deploy from `frontend/`:
 
 ```
 npx vercel --prod
 ```
-
-(That's it. The project is already linked.)
 
 ## Environment
 
@@ -21,20 +22,14 @@ npx vercel --prod
 - The frontend calls same-origin `/api/*` in production, `http://localhost:8000`
   in local dev. `VITE_API_URL` overrides both when set.
 
-## Domain
-
-`voxresearch.work.gd` + `www` are attached to the Vercel project.
-DNS (freedomain.one panel):
-
-- `@` A → `216.198.79.1` and (second row) `64.29.17.1`
-- `www` CNAME → `f2db8d2bdf22ca9d.vercel-dns-017.com`
-
 ## Notes
 
-- The temporary `*.vercel.app` URLs are team-login protected (SSO);
-  the custom domain is fully public. Don't remove the SSO setting.
 - Serverless functions time out at 60s; related questions run in parallel
   with the answer stream to stay well under that.
 - Meta's API refuses Render's network (model_not_found from any Render
   region) but works from Vercel and residential IPs. Don't move the
-  backend back to Render.
+  backend to Render.
+- The free subdomain voxresearch.work.gd couldn't be attached anywhere:
+  Vercel demands parent-domain proof, Netlify has the whole work.gd zone
+  claimed by another team, and GitHub Pages DNS verification stalls.
+  Revisit only with a proper root domain.
