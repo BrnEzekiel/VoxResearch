@@ -4,7 +4,6 @@ import ResultCard from "./components/ResultCard";
 import HistorySidebar from "./components/HistorySidebar";
 import SearchSkeleton from "./components/SearchSkeleton";
 
-import SplashScreen from "./components/SplashScreen";
 import KiroTimeline from "./components/KiroTimeline";
 import ShortcutOverlay from "./components/ShortcutOverlay";
 import DataPanel from "./components/DataPanel";
@@ -76,12 +75,7 @@ export default function App() {
   const [ratings, setRatings] = useState(() => JSON.parse(localStorage.getItem("vox_ratings") || "{}"));
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [sidebarTab, setSidebarTab] = useState("history");
-  const [darkMode, setDarkMode] = useState(() => {
-    const saved = localStorage.getItem("vox_theme");
-    if (saved === "dark") return true;
-    if (saved === "light") return false;
-    return window.matchMedia && window.matchMedia("(prefers-color-scheme: dark)").matches;
-  });
+  const darkMode = false; // light mode only — dark mode removed
   const [transcript, setTranscript] = useState("");
   const [suggestions, setSuggestions] = useState([]);
   const [shareMsg, setShareMsg] = useState("");
@@ -92,10 +86,16 @@ export default function App() {
   const [compareMode, setCompareMode] = useState(false);
   const [compareQuery, setCompareQuery] = useState("");
   const [compareTurns, setCompareTurns] = useState([]);
-  const [splashDone, setSplashDone] = useState(() => !!localStorage.getItem("vox_splash_seen"));
   const [showShortcuts, setShowShortcuts] = useState(false);
   const [accentKey, setAccentKey] = useState(() => localStorage.getItem("vox_accent") || "orange");
-  const [fontSize, setFontSize] = useState(() => parseInt(localStorage.getItem("vox_fontsize") || "16"));
+  const [fontSize, setFontSize] = useState(() => {
+    // One-time 15% scale-down for existing installs (fresh installs start at 14).
+    if (!localStorage.getItem("vox_font_migrated")) {
+      localStorage.setItem("vox_font_migrated", "1");
+      return Math.round(parseInt(localStorage.getItem("vox_fontsize") || "16") * 0.85);
+    }
+    return parseInt(localStorage.getItem("vox_fontsize") || "14");
+  });
   const [offline, setOffline] = useState(!navigator.onLine);
   const [batchInput, setBatchInput] = useState("");
   const [showBatch, setShowBatch] = useState(false);
@@ -148,7 +148,8 @@ export default function App() {
   useEffect(() => { localStorage.setItem("vox_ratings", JSON.stringify(ratings)); }, [ratings]);
   useEffect(() => { localStorage.setItem("vox_accent", accentKey); }, [accentKey]);
   useEffect(() => { localStorage.setItem("vox_fontsize", fontSize); }, [fontSize]);
-  useEffect(() => { localStorage.setItem("vox_theme", darkMode ? "dark" : "light"); }, [darkMode]);
+  // Applied to <html> so every rem-based size in the app scales together.
+  useEffect(() => { document.documentElement.style.fontSize = `${fontSize}px`; }, [fontSize]);
   useEffect(() => {
     if (autoScroll) bottomRef.current?.scrollIntoView({ behavior: loading ? "auto" : "smooth" });
   }, [turns, loading, autoScroll]);
@@ -423,11 +424,10 @@ export default function App() {
   const mutedText = darkMode ? "text-gray-500" : "text-gray-400";
   const railBtn = (on) => `p-2 rounded-lg transition ${on ? accent.text : darkMode ? "text-gray-500 hover:text-gray-200" : "text-gray-400 hover:text-gray-700"}`;
 
-  if (!splashDone) return <SplashScreen onDone={() => { setSplashDone(true); localStorage.setItem("vox_splash_seen","1"); }} />;
   if (showTimeline) return <KiroTimeline dark={darkMode} onClose={() => setShowTimeline(false)} />;
 
   return (
-    <div className={`min-h-screen ${bg} transition-colors duration-300`} style={{ fontSize: `${fontSize}px` }}>
+    <div className={`min-h-screen ${bg} transition-colors duration-300`}>
 
       {showShortcuts && <ShortcutOverlay dark={darkMode} onClose={() => setShowShortcuts(false)} />}
 
@@ -461,7 +461,6 @@ export default function App() {
         onExport={exportFullConversation}
         settings={{ dark: darkMode, accent: accentKey, fontSize, compareMode, templates: TEMPLATES }}
         onSettings={(key, val) => {
-          if (key === "dark") setDarkMode(val);
           if (key === "accent") setAccentKey(val);
           if (key === "fontSize") setFontSize(val);
           if (key === "compareMode") setCompareMode(val);
@@ -478,18 +477,18 @@ export default function App() {
 
         {/* Top bar — centered title, language + length only */}
         <div className={`sticky top-0 z-10 w-full px-5 py-2.5 flex items-center ${topBar} backdrop-blur`}>
-          <div className="w-1/4" />
+          <div className="flex-1 min-w-0" />
 
-          {/* Center: title — truly centered */}
-          <div className="flex-1 flex justify-center">
-            <span className={`text-lg font-bold tracking-tight ${accent.text}`}
+          {/* Center: title — shrinks instead of ever overlapping the controls */}
+          <div className="flex-shrink min-w-0 px-2 text-center">
+            <span className={`block truncate text-base sm:text-lg font-bold tracking-tight ${accent.text}`}
               style={{ textShadow: `0 0 20px ${accent.hex}40` }}>
               VoxResearch
             </span>
           </div>
 
-          {/* Right: language, length, clear */}
-          <div className="w-1/4 flex items-center justify-end gap-2">
+          {/* Right: language, length, clear — never shrinks under the title */}
+          <div className="flex-1 flex items-center justify-end gap-2 flex-shrink-0 min-w-0">
             <select value={language} onChange={e => setLanguage(e.target.value)}
               className={`text-xs rounded-lg border px-2 py-1 bg-transparent ${darkMode ? "border-gray-700 text-gray-300" : "border-gray-200 text-gray-600"}`}>
               {["English","Swahili","French","Spanish","German","Arabic","Hindi"].map(l => <option key={l}>{l}</option>)}

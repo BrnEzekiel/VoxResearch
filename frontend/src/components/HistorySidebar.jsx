@@ -115,14 +115,6 @@ export default function HistorySidebar({ open, sessions, activeId, filter, onFil
                 ))}
               </div>
             </div>
-            {/* Theme */}
-            <div>
-              <p className={`text-xs font-semibold uppercase tracking-widest mb-2 ${dark ? "text-gray-500" : "text-gray-400"}`}>Theme</p>
-              <button onClick={() => onSettings("dark", !settings.dark)}
-                className={`w-full text-left text-sm px-3 py-2 rounded-lg border transition ${dark ? "border-gray-700 text-gray-300" : "border-gray-200 text-gray-600"}`}>
-                {settings.dark ? "Switch to Light mode" : "Switch to Dark mode"}
-              </button>
-            </div>
             {/* Accent color */}
             <div>
               <p className={`text-xs font-semibold uppercase tracking-widest mb-2 ${dark ? "text-gray-500" : "text-gray-400"}`}>Accent color</p>
