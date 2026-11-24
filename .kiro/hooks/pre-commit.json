@@ -3,7 +3,7 @@
   "steps": [
     {
       "name": "Check META_API_KEY not hardcoded",
-      "run": "grep -r 'LLM_' backend/ && echo 'WARNING: API key may be hardcoded' || echo 'OK: no hardcoded key found'"
+      "run": "grep -rE '(META_API_KEY|LLM_|sk-|vcp_|nfp_|rnd_|hf_)[A-Za-z0-9_\\-]{10,}' backend/ frontend/api/ frontend/src/ --include='*.py' --include='*.js' --include='*.jsx' | grep -v 'process.env' | grep -v 'os.getenv' | grep -v 'getenv' && echo 'WARNING: possible hardcoded secret' || echo 'OK: no hardcoded secrets found'"
     }
   ]
 }
