@@ -1,8 +1,9 @@
-from fastapi import FastAPI, UploadFile, File, HTTPException
+from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 from dotenv import load_dotenv
+import base64
 import httpx
 import json
 import re
@@ -167,13 +168,25 @@ async def research(req: QueryRequest):
 
 
 @app.post("/transcribe")
-async def transcribe(audio: UploadFile = File(...)):
-    audio_bytes = await audio.read()
+async def transcribe(request: Request):
+    ctype = request.headers.get("content-type", "")
+    if "application/json" in ctype:
+        body = await request.json()
+        data_url = body.get("audio", "")
+        b64 = data_url.split(",", 1)[-1]
+        audio_bytes = base64.b64decode(b64)
+        filename = body.get("filename", "recording.webm")
+        mime = body.get("mime", "audio/webm")
+    else:
+        form = await request.form()
+        f = form["audio"]
+        audio_bytes = await f.read()
+        filename, mime = f.filename, f.content_type
     async with httpx.AsyncClient(timeout=60) as client:
         resp = await client.post(
             f"{META_BASE}/asr/transcribe",
             headers={"Authorization": f"Bearer {META_API_KEY}"},
-            files={"file": (audio.filename, audio_bytes, audio.content_type)},
+            files={"file": (filename, audio_bytes, mime)},
             data={"model": "muse-voice-transcribe-1.0"},
         )
         if resp.status_code != 200:

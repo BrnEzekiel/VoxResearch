@@ -17,8 +17,9 @@ const SUGGESTIONS = [
   "How does GPT work?","What are black holes?",
 ];
 
-// Production backend URL comes from Vercel env; local dev falls back to localhost.
-const API_BASE = import.meta.env.VITE_API_URL || "http://localhost:8000";
+// Backend lives on the same site in production (/api/*); local dev uses :8000.
+// VITE_API_URL overrides both when set (e.g. pointing prod at another backend).
+const API_BASE = import.meta.env.VITE_API_URL || (import.meta.env.PROD ? "/api" : "http://localhost:8000");
 
 const ACCENT_COLORS = {
   orange: { btn: "bg-orange-500 hover:bg-orange-400", text: "text-orange-500", ring: "focus:ring-orange-400", hex: "#f97316" },
@@ -275,8 +276,17 @@ export default function App() {
   async function handleVoice(audioBlob) {
     setLoading(true); setError(null); setTranscript("");
     try {
-      const form = new FormData(); form.append("audio", audioBlob, "recording.webm");
-      const res = await fetch(`${API_BASE}/transcribe`, { method: "POST", body: form });
+      const dataUrl = await new Promise((resolve, reject) => {
+        const r = new FileReader();
+        r.onload = () => resolve(r.result);
+        r.onerror = reject;
+        r.readAsDataURL(audioBlob);
+      });
+      const res = await fetch(`${API_BASE}/transcribe`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ audio: dataUrl, filename: "recording.webm", mime: audioBlob.type || "audio/webm" }),
+      });
       if (!res.ok) throw new Error(await res.text());
       const data = await res.json(); setTranscript(data.transcript);
       await doSearch(data.transcript);
