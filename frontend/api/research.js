@@ -21,9 +21,29 @@ function extractTextAndCitations(payload) {
   return { text, citations };
 }
 
+const ALLOWED_ORIGINS = [
+  "https://voxresearch.work.gd",
+  "https://www.voxresearch.work.gd",
+  "http://localhost:3000",
+];
+
+function corsHeaders(req) {
+  const origin = req.headers.origin || "";
+  return {
+    "Access-Control-Allow-Origin": ALLOWED_ORIGINS.includes(origin) ? origin : ALLOWED_ORIGINS[0],
+    "Access-Control-Allow-Methods": "POST, OPTIONS",
+    "Access-Control-Allow-Headers": "Content-Type",
+  };
+}
+
 export default async function handler(req, res) {
+  if (req.method === "OPTIONS") {
+    res.writeHead(204, corsHeaders(req));
+    res.end();
+    return;
+  }
   if (req.method !== "POST") {
-    res.writeHead(405, { "Content-Type": "application/json" });
+    res.writeHead(405, { "Content-Type": "application/json", ...corsHeaders(req) });
     res.end(JSON.stringify({ error: "POST only" }));
     return;
   }
@@ -47,6 +67,7 @@ export default async function handler(req, res) {
     "Content-Type": "text/event-stream",
     "Cache-Control": "no-cache, no-transform",
     "X-Accel-Buffering": "no",
+    ...corsHeaders(req),
   });
 
   // Related questions run in PARALLEL with the answer stream (they only need the query).

@@ -5,14 +5,30 @@ const META_BASE = "https://api.meta.ai/v1";
 
 export const config = { maxDuration: 60, api: { bodyParser: { sizeLimit: "10mb" } } };
 
-const send = (res, code, obj) => {
-  res.writeHead(code, { "Content-Type": "application/json" });
+const ALLOWED_ORIGINS = [
+  "https://voxresearch.work.gd",
+  "https://www.voxresearch.work.gd",
+  "http://localhost:3000",
+];
+
+const send = (res, req, code, obj) => {
+  const origin = (req && req.headers && req.headers.origin) || "";
+  res.writeHead(code, {
+    "Content-Type": "application/json",
+    "Access-Control-Allow-Origin": ALLOWED_ORIGINS.includes(origin) ? origin : ALLOWED_ORIGINS[0],
+    "Access-Control-Allow-Methods": "POST, OPTIONS",
+    "Access-Control-Allow-Headers": "Content-Type",
+  });
   res.end(JSON.stringify(obj));
 };
 
 export default async function handler(req, res) {
+  if (req.method === "OPTIONS") {
+    send(res, req, 204, {});
+    return;
+  }
   if (req.method !== "POST") {
-    send(res, 405, { error: "POST only" });
+    send(res, req, 405, { error: "POST only" });
     return;
   }
   const key = process.env.META_API_KEY || "";
@@ -21,7 +37,7 @@ export default async function handler(req, res) {
     const b64 = String(audio).includes(",") ? String(audio).split(",").pop() : String(audio);
     const bytes = Buffer.from(b64, "base64");
     if (bytes.length === 0) {
-      send(res, 400, { error: "empty audio" });
+      send(res, req, 400, { error: "empty audio" });
       return;
     }
     const ml = String(mime || "").toLowerCase();
@@ -39,13 +55,13 @@ export default async function handler(req, res) {
       body: form,
     });
     if (!r.ok) {
-      send(res, r.status, { error: await r.text() });
+      send(res, req, r.status, { error: await r.text() });
       return;
     }
     const result = await r.json();
     const transcript = (result.turns || []).map((t) => t.text || "").join(" ");
-    send(res, 200, { transcript });
+    send(res, req, 200, { transcript });
   } catch (e) {
-    send(res, 500, { error: String((e && e.message) || e) });
+    send(res, req, 500, { error: String((e && e.message) || e) });
   }
 }
