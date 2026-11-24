@@ -222,6 +222,17 @@ export default function App() {
     const countOnce = () => {
       if (!counted) { counted = true; setQuotaLeft(recordMessage()); }
     };
+    // Batch token renders (~8fps): re-rendering the full answer on every
+    // token melts weak phone CPUs. Control events always flush first.
+    let pendingText = "";
+    let lastFlush = 0;
+    const flushTokens = () => {
+      if (!pendingText) return;
+      const chunk = pendingText;
+      pendingText = "";
+      lastFlush = Date.now();
+      setter(t => ({ ...t, streaming: (t.streaming || "") + chunk }));
+    };
 
     abortRef.current = new AbortController();
     try {
@@ -262,17 +273,23 @@ export default function App() {
           const raw = line.slice(5).trim(); if (!raw) continue;
           try {
             const msg = JSON.parse(raw);
-            if (msg.type === "token") { countOnce(); setter(t => ({ ...t, streaming: (t.streaming || "") + msg.text })); }
-            else if (msg.type === "citations") setter(t => ({ ...t, citations: msg.data, grounded: true }));
-            else if (msg.type === "related") { countOnce(); setter(t => ({ ...t, related: msg.data })); }
-            else if (msg.type === "done") { countOnce(); setter(t => ({ ...t, answer: t.streaming, streaming: "" })); }
+            if (msg.type === "token") {
+              countOnce();
+              pendingText += msg.text || "";
+              if (Date.now() - lastFlush >= 120) flushTokens();
+            }
+            else if (msg.type === "citations") { flushTokens(); setter(t => ({ ...t, citations: msg.data, grounded: true })); }
+            else if (msg.type === "related") { countOnce(); flushTokens(); setter(t => ({ ...t, related: msg.data })); }
+            else if (msg.type === "done") { countOnce(); flushTokens(); setter(t => ({ ...t, answer: t.streaming, streaming: "" })); }
             else if (msg.type === "error") throw new Error(msg.text);
           } catch (_) {}
         }
       }
+      flushTokens();
     } catch (e) {
       if (e.name === "AbortError") {
         // User hit Stop — keep what streamed so far as the final answer.
+        flushTokens();
         setter(t => ({ ...t, answer: t.streaming || t.answer || "(stopped)", streaming: "" }));
       } else {
         setError(e.message);
