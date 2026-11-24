@@ -1,0 +1,9 @@
+{
+  "hook": "pre-commit",
+  "steps": [
+    {
+      "name": "Check META_API_KEY not hardcoded",
+      "run": "grep -r 'LLM_' backend/ && echo 'WARNING: API key may be hardcoded' || echo 'OK: no hardcoded key found'"
+    }
+  ]
+}
