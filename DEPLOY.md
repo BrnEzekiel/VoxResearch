@@ -15,10 +15,23 @@ Pushing to `main` auto-deploys. Manual deploy from `frontend/`:
 npx vercel --prod
 ```
 
+## Message quota (10 free per device, wipe-proof)
+
+- Each browser gets a fingerprint id (`deviceQuota.js`); the used-count lives
+  server-side in the `vox-quota` Edge Config store, keyed by that id.
+- `/api/research` checks the count before streaming (429 when exhausted),
+  returns `X-Quota-Left`, and persists used+1 only for delivered answers.
+  `/api/transcribe` checks without counting.
+- The frontend keeps a local mirror for instant checks and syncs down to the
+  server value. Clearing browser data does NOT reset the server count.
+- Local dev (`backend/`) has no quota — it uses your own key directly.
+
 ## Environment
 
-- `META_API_KEY` is set on the Vercel project (production + preview).
-  Never commit `backend/.env` — it's git-ignored.
+- `META_API_KEY`, `EDGE_CONFIG`, `QUOTA_API_TOKEN` are set on the Vercel
+  project (production + preview). Never commit `backend/.env` — it's
+  git-ignored. If `QUOTA_API_TOKEN` (a Vercel API token) is ever exposed,
+  revoke it in Vercel settings and set a fresh one.
 - The frontend calls same-origin `/api/*` in production, `http://localhost:8000`
   in local dev. `VITE_API_URL` overrides both when set.
 
