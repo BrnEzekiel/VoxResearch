@@ -1,5 +1,7 @@
 // Vercel serverless function (Node runtime). Same contract as backend/main.py /research:
 // POST {query, context, language, length} -> SSE stream of token/citations/related/done.
+import { quotaUsed, quotaSet, quotaId, QUOTA_LIMIT } from "./_quota.js";
+
 const META_BASE = "https://api.meta.ai/v1";
 
 export const config = { maxDuration: 60 };
@@ -33,6 +35,7 @@ function corsHeaders(req) {
     "Access-Control-Allow-Origin": ALLOWED_ORIGINS.includes(origin) ? origin : ALLOWED_ORIGINS[0],
     "Access-Control-Allow-Methods": "POST, OPTIONS",
     "Access-Control-Allow-Headers": "Content-Type",
+    "Access-Control-Expose-Headers": "X-Quota-Left",
   };
 }
 
@@ -49,6 +52,16 @@ export default async function handler(req, res) {
   }
   const key = process.env.META_API_KEY || "";
   const { query = "", context = [], language = "English", length = "Detailed" } = req.body || {};
+
+  // Wipe-proof quota: the count lives server-side, keyed by device fingerprint.
+  const deviceId = quotaId(req, req.body && req.body.deviceId);
+  let used = 0;
+  try { used = await quotaUsed(deviceId); } catch { used = 0; }
+  if (used >= QUOTA_LIMIT) {
+    res.writeHead(429, { "Content-Type": "application/json", ...corsHeaders(req) });
+    res.end(JSON.stringify({ error: `You've used your ${QUOTA_LIMIT} free messages on this device.` }));
+    return;
+  }
 
   const lengthInstruction = {
     Brief: "Answer in 2-3 sentences only.",
@@ -67,6 +80,7 @@ export default async function handler(req, res) {
     "Content-Type": "text/event-stream",
     "Cache-Control": "no-cache, no-transform",
     "X-Accel-Buffering": "no",
+    "X-Quota-Left": String(Math.max(0, QUOTA_LIMIT - used - 1)),
     ...corsHeaders(req),
   });
 
@@ -200,6 +214,8 @@ export default async function handler(req, res) {
 
   if (citations && citations.length > 0) res.write(sse({ type: "citations", data: citations }));
   const related = await relatedPromise;
+  // Persist the count only for delivered answers (failures stay free).
+  await quotaSet(deviceId, used + 1);
   res.write(sse({ type: "related", data: related }));
   res.write(sse({ type: "done" }));
   res.end();

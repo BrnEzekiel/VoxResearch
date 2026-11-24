@@ -1,6 +1,8 @@
 // Vercel serverless function (Node runtime). Same contract as backend/main.py /transcribe,
 // but the audio arrives as JSON {audio: dataURL|base64, filename, mime} to avoid
 // multipart parsing. Forwards to Meta ASR as multipart.
+import { quotaUsed, quotaId, QUOTA_LIMIT } from "./_quota.js";
+
 const META_BASE = "https://api.meta.ai/v1";
 
 export const config = { maxDuration: 60, api: { bodyParser: { sizeLimit: "10mb" } } };
@@ -33,6 +35,14 @@ export default async function handler(req, res) {
   }
   const key = process.env.META_API_KEY || "";
   try {
+    // Gate only (the follow-up research call does the counting).
+    const deviceId = quotaId(req, req.body && req.body.deviceId);
+    let used = 0;
+    try { used = await quotaUsed(deviceId); } catch { used = 0; }
+    if (used >= QUOTA_LIMIT) {
+      send(res, req, 429, { error: `You've used your ${QUOTA_LIMIT} free messages on this device.` });
+      return;
+    }
     const { audio = "", filename = "recording.webm", mime = "audio/webm" } = req.body || {};
     const b64 = String(audio).includes(",") ? String(audio).split(",").pop() : String(audio);
     const bytes = Buffer.from(b64, "base64");

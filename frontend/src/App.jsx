@@ -8,7 +8,7 @@ import KiroTimeline from "./components/KiroTimeline";
 import ShortcutOverlay from "./components/ShortcutOverlay";
 import DataPanel from "./components/DataPanel";
 import { exportConversationPDF } from "./utils/exportPDF";
-import { getMessagesLeft, recordMessage, reconcileQuota, MESSAGE_LIMIT } from "./utils/deviceQuota";
+import { getDeviceId, getMessagesLeft, getUsedCount, setUsedCount, recordMessage, reconcileQuota, MESSAGE_LIMIT } from "./utils/deviceQuota";
 import { blobToWavDataUrl } from "./utils/audioToWav";
 
 const SUGGESTIONS = [
@@ -190,7 +190,7 @@ export default function App() {
   async function doSearch(text, isCompare = false) {
     const q = (text || query).trim();
     if (!q) return;
-    if (!isCompare && getMessagesLeft() <= 0) {
+    if (getMessagesLeft() <= 0) {
       setError(`You've used your ${MESSAGE_LIMIT} free messages on this device.`);
       return;
     }
@@ -220,7 +220,7 @@ export default function App() {
     // Count the message once real content arrives (failed sends stay free).
     let counted = false;
     const countOnce = () => {
-      if (!counted && !isCompare) { counted = true; setQuotaLeft(recordMessage()); }
+      if (!counted) { counted = true; setQuotaLeft(recordMessage()); }
     };
 
     abortRef.current = new AbortController();
@@ -228,10 +228,25 @@ export default function App() {
       const res = await fetch(`${API_BASE}/research`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ query: backendQuery, context, language, length: answerLength }),
+        body: JSON.stringify({ query: backendQuery, context, language, length: answerLength, deviceId: getDeviceId() }),
         signal: abortRef.current.signal,
       });
+      if (res.status === 429) {
+        let msg = `You've used your ${MESSAGE_LIMIT} free messages on this device.`;
+        try { const j = JSON.parse(await res.text()); if (j.error) msg = j.error; } catch {}
+        setQuotaLeft(0);
+        throw new Error(msg);
+      }
       if (!res.ok) throw new Error(await res.text());
+      // Server count wins: adopt it when higher than local.
+      const serverLeft = res.headers.get("x-quota-left");
+      if (serverLeft !== null) {
+        const serverUsed = MESSAGE_LIMIT - Math.max(0, parseInt(serverLeft) || 0);
+        if (serverUsed > getUsedCount()) {
+          setUsedCount(serverUsed);
+          setQuotaLeft(Math.max(0, MESSAGE_LIMIT - serverUsed));
+        }
+      }
 
       const reader = res.body.getReader();
       const decoder = new TextDecoder();
@@ -288,7 +303,7 @@ export default function App() {
       const res = await fetch(`${API_BASE}/transcribe`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ audio: dataUrl, filename: "recording.wav", mime: "audio/wav" }),
+        body: JSON.stringify({ audio: dataUrl, filename: "recording.wav", mime: "audio/wav", deviceId: getDeviceId() }),
       });
       if (!res.ok) throw new Error(await res.text());
       const data = await res.json(); setTranscript(data.transcript);

@@ -109,6 +109,16 @@ async function idbSet(n) {
 export function getUsedCount() { return lsGet(); }
 export function getMessagesLeft() { return Math.max(0, MESSAGE_LIMIT - lsGet()); }
 
+// Server is truth: adopt its count when higher (never lower it locally).
+export function setUsedCount(n) {
+  const v = Math.max(0, n | 0);
+  if (v <= lsGet()) return lsGet();
+  lsSet(v);
+  cookieSet(v);
+  idbSet(v);
+  return v;
+}
+
 // Highest count wins everywhere.
 export async function reconcileQuota() {
   const [a, b] = await Promise.all([idbGet(), Promise.resolve(cookieGet())]);
