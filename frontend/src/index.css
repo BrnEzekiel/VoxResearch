@@ -29,6 +29,21 @@
 .ghost-float { animation: ghost-float 3.2s ease-in-out infinite; transform-origin: center; }
 .ghost-shadow { animation: ghost-shadow 3.2s ease-in-out infinite; transform-origin: center; }
 .ghost-wave { animation: ghost-wave 1.6s ease-in-out infinite; transform-origin: 88px 52px; }
+@keyframes ghost-blink {
+  0%, 91%, 100% { transform: scaleY(1); }
+  94%, 96% { transform: scaleY(0.08); }
+}
+.ghost-blink { transform-box: fill-box; transform-origin: center; animation: ghost-blink 4.2s ease-in-out infinite; }
+
+/* Heartbeat title plate — the frame thumps, the words stay still */
+@keyframes heartbeat {
+  0%, 100% { transform: scale(1); }
+  14% { transform: scale(1.06); }
+  28% { transform: scale(1); }
+  42% { transform: scale(1.045); }
+  60% { transform: scale(1); }
+}
+.heartbeat { animation: heartbeat 1.6s ease-in-out infinite; }
 
 /* Halloween bats — drift across, wings flap */
 @keyframes bat-drift {

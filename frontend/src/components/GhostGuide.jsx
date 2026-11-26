@@ -7,7 +7,7 @@ export function Ghost({ size = 96 }) {
       width={size}
       height={size}
       viewBox="0 0 120 120"
-      className="mx-auto"
+      className="mx-auto overflow-visible"
       role="img"
       aria-label="Friendly ghost guide"
     >
@@ -21,7 +21,6 @@ export function Ghost({ size = 96 }) {
           <stop offset="100%" stopColor="#ffedd5" />
         </linearGradient>
       </defs>
-      <circle cx="60" cy="55" r="52" fill="url(#ghostGlow)" />
       <ellipse className="ghost-shadow" cx="60" cy="108" rx="26" ry="5" fill="#9a3412" />
       <g className="ghost-float">
         <path
@@ -37,11 +36,13 @@ export function Ghost({ size = 96 }) {
           <path d="M94 62 Q106 56 110 44" fill="none" stroke="#fed7aa" strokeWidth="6" strokeLinecap="round" />
           <circle cx="110" cy="40" r="5" fill="#fff7ed" stroke="#fed7aa" strokeWidth="2" />
         </g>
-        {/* eyes */}
-        <ellipse cx="47" cy="50" rx="6" ry="8.5" fill="#1f2937" />
-        <ellipse cx="73" cy="50" rx="6" ry="8.5" fill="#1f2937" />
-        <circle cx="49" cy="47" r="2.2" fill="#ffffff" />
-        <circle cx="75" cy="47" r="2.2" fill="#ffffff" />
+        {/* eyes (blink) */}
+        <g className="ghost-blink">
+          <ellipse cx="47" cy="50" rx="6" ry="8.5" fill="#1f2937" />
+          <ellipse cx="73" cy="50" rx="6" ry="8.5" fill="#1f2937" />
+          <circle cx="49" cy="47" r="2.2" fill="#ffffff" />
+          <circle cx="75" cy="47" r="2.2" fill="#ffffff" />
+        </g>
         {/* happy open smile */}
         <path d="M50 66 Q60 78 70 66 Q60 71 50 66 Z" fill="#7c2d12" />
         <path d="M52 67 Q60 74 68 67" fill="none" stroke="#7c2d12" strokeWidth="2" strokeLinecap="round" />
@@ -81,18 +82,19 @@ export function Pumpkin({ size = 84 }) {
 
 function Bat({ width = 46 }) {
   return (
-    <svg width={width} viewBox="0 0 100 44" role="img" aria-label="Bat">
+    <svg width={width} viewBox="0 0 120 50" className="overflow-visible" role="img" aria-label="Bat">
       <g className="bat-wing-l">
-        <path d="M48 26 C36 8 22 6 8 14 C18 16 20 22 18 28 C28 26 38 30 46 34 Z" fill="#1f2937" />
+        <path d="M60 32 C48 14 32 8 10 10 C22 14 26 22 24 28 C34 26 38 32 38 38 C48 36 54 38 60 40 Z" fill="#292524" />
       </g>
       <g className="bat-wing-r">
-        <path d="M52 26 C64 8 78 6 92 14 C82 16 80 22 82 28 C72 26 62 30 54 34 Z" fill="#1f2937" />
+        <path d="M60 32 C72 14 88 8 110 10 C98 14 94 22 96 28 C86 26 82 32 82 38 C72 36 66 38 60 40 Z" fill="#292524" />
       </g>
-      <ellipse cx="50" cy="26" rx="7" ry="10" fill="#1f2937" />
-      <path d="M45 18 L47 12 L49 18 Z" fill="#1f2937" />
-      <path d="M51 18 L53 12 L55 18 Z" fill="#1f2937" />
-      <circle cx="47.5" cy="25" r="1.4" fill="#fbbf24" />
-      <circle cx="52.5" cy="25" r="1.4" fill="#fbbf24" />
+      <ellipse cx="60" cy="30" rx="8" ry="11" fill="#292524" />
+      <path d="M53 21 L55.5 13 L58 21 Z" fill="#292524" />
+      <path d="M62 21 L64.5 13 L67 21 Z" fill="#292524" />
+      <circle cx="57" cy="29" r="1.6" fill="#fbbf24" />
+      <circle cx="63" cy="29" r="1.6" fill="#fbbf24" />
+      <path d="M57 35 Q60 37 63 35" fill="none" stroke="#57534e" strokeWidth="1" strokeLinecap="round" />
     </svg>
   );
 }

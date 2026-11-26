@@ -4,13 +4,14 @@ import ResultCard from "./components/ResultCard";
 import HistorySidebar from "./components/HistorySidebar";
 import SearchSkeleton from "./components/SearchSkeleton";
 
-import { Ghost, GhostCaption, Pumpkin, Bats } from "./components/GhostGuide";
+import { Ghost, GhostCaption, Bats } from "./components/GhostGuide";
 import KiroTimeline from "./components/KiroTimeline";
 import ShortcutOverlay from "./components/ShortcutOverlay";
 import DataPanel from "./components/DataPanel";
 import StatsPanel from "./components/StatsPanel";
 import KiroPanel from "./components/KiroPanel";
 import ChangelogModal from "./components/ChangelogModal";
+import NeuralBg from "./components/NeuralBg";
 import { exportConversationPDF } from "./utils/exportPDF";
 import { getDeviceId, getMessagesLeft, getUsedCount, setUsedCount, recordMessage, reconcileQuota, MESSAGE_LIMIT } from "./utils/deviceQuota";
 import { blobToWavDataUrl } from "./utils/audioToWav";
@@ -170,6 +171,9 @@ export default function App() {
   // Applied to <html> so every rem-based size in the app scales together.
   useEffect(() => { document.documentElement.style.fontSize = `${fontSize}px`; }, [fontSize]);
   useEffect(() => {
+    // Never autoscroll the empty state — it slides the ghost and bats
+    // up under the sticky top bar on load.
+    if (turns.length === 0) return;
     bottomRef.current?.scrollIntoView({ behavior: loading ? "auto" : "smooth" });
   }, [turns, loading]);
 
@@ -497,6 +501,7 @@ export default function App() {
 
   return (
     <div className={`min-h-screen ${bg} transition-colors duration-300`}>
+      <NeuralBg />
 
       {showShortcuts && <ShortcutOverlay dark={darkMode} onClose={() => setShowShortcuts(false)} />}
 
@@ -548,7 +553,7 @@ export default function App() {
       />
 
       {/* Main — shifts right when sidebar opens (desktop only) */}
-      <div className={`flex flex-col min-h-screen ml-0 transition-all duration-300 ${sidebarOpen ? "md:ml-72" : "md:ml-12"}`}>
+      <div className={`flex flex-col h-screen overflow-hidden ml-0 transition-all duration-300 ${sidebarOpen ? "md:ml-72" : "md:ml-12"}`}>
         {offline && <div className="w-full bg-red-500 text-white text-xs text-center py-1.5 z-50">👻 You're offline — even ghosts need Wi-Fi</div>}
 
         {/* Top bar — title left, controls right; neither can ever overlap */}
@@ -559,9 +564,14 @@ export default function App() {
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16"/>
             </svg>
           </button>
-          <span className={`flex-1 min-w-0 truncate text-left text-base sm:text-lg font-bold tracking-tight ${accent.text}`}
-            style={{ textShadow: `0 0 20px ${accent.hex}40` }}>
-            VoxResearch 🎃
+          <span className="flex-1 min-w-0 truncate text-left">
+            <span className="relative inline-block px-2 py-0.5">
+              <span aria-hidden="true" className="absolute inset-0 border rounded-md heartbeat"
+                style={{ borderColor: `${accent.hex}90` }} />
+              <span className={`relative text-base sm:text-lg font-bold tracking-tight ${accent.text}`}>
+                VoxResearch
+              </span>
+            </span>
           </span>
 
           {/* Right: language, length, clear — exact size, never squeezed */}
@@ -584,24 +594,18 @@ export default function App() {
         </div>
 
         {/* Chat — full width, responsive padding */}
-        <div className="flex-1 overflow-y-auto relative z-0">
+        <div className="flex-1 min-h-0 overflow-y-auto relative z-0">
           <div className="w-full px-4 sm:px-10 md:px-16 lg:px-20 py-8">
 
             {turns.length === 0 && !loading && (
               <div className="text-center py-24 relative">
                 <Bats />
-                <div className="absolute left-1/2 top-10 -translate-x-1/2 w-[36rem] max-w-full h-72 pointer-events-none"
-                  style={{ background: "radial-gradient(ellipse at center, rgba(249,115,22,0.14) 0%, rgba(168,85,247,0.07) 45%, transparent 70%)" }} />
                 <div className="relative">
                   <div className="relative flex justify-center">
                     <Ghost size={132} />
                   </div>
-                  <div className="absolute bottom-2 pointer-events-none" style={{ left: "calc(50% + 80px)" }}>
-                    <Pumpkin size={72} />
-                  </div>
                 </div>
-                <h2 className="text-5xl font-bold mb-4 mt-4 bg-gradient-to-r from-orange-500 via-amber-500 to-purple-600 bg-clip-text text-transparent"
-                  style={{ filter: "drop-shadow(0 0 24px rgba(249,115,22,0.25))" }}>
+                <h2 className="text-5xl font-bold mb-4 mt-4 bg-gradient-to-r from-orange-500 via-amber-500 to-purple-600 bg-clip-text text-transparent">
                   VoxResearch
                 </h2>
                 <p className={`text-lg mb-2 ${mutedText}`}>Ask anything. Get live cited answers.</p>
