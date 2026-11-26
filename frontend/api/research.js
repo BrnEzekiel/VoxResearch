@@ -59,7 +59,7 @@ export default async function handler(req, res) {
   try { used = await quotaUsed(deviceId); } catch { used = 0; }
   if (used >= QUOTA_LIMIT) {
     res.writeHead(429, { "Content-Type": "application/json", ...corsHeaders(req) });
-    res.end(JSON.stringify({ error: `You've used your ${QUOTA_LIMIT} free messages on this device.` }));
+    res.end(JSON.stringify({ error: `👻 Your ${QUOTA_LIMIT} treats are all gone — this device is out of free messages.` }));
     return;
   }
 

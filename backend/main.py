@@ -199,18 +199,25 @@ async def transcribe(request: Request):
         filename, mime = f.filename, f.content_type
     # Meta's file endpoint only accepts WAV — the frontend converts first.
     audio_encoding = "WAV"
+    req_json = json.dumps({"model": "muse-voice-transcribe-1.0", "audioEncoding": audio_encoding})
     async with httpx.AsyncClient(timeout=60) as client:
         resp = await client.post(
             f"{META_BASE}/asr/transcribe",
             headers={"Authorization": f"Bearer {META_API_KEY}"},
-            files={"audio": (filename, audio_bytes, mime)},
-            data={"request": json.dumps({"model": "muse-voice-transcribe-1.0", "audioEncoding": audio_encoding})},
+            # NOTE: the request part must be typed application/json or Meta 400s.
+            files={
+                "audio": (filename, audio_bytes, mime),
+                "request": ("request.json", req_json, "application/json"),
+            },
         )
         if resp.status_code != 200:
             raise HTTPException(status_code=resp.status_code, detail=resp.text)
         result = resp.json()
+        if isinstance(result, dict) and result.get("error"):
+            err = result["error"]
+            raise HTTPException(status_code=502, detail=err.get("message", "transcription failed"))
 
-    transcript = " ".join(t.get("text", "") for t in result.get("turns", []))
+    transcript = result.get("transcript") or " ".join(t.get("text", "") for t in result.get("turns", []))
     return {"transcript": transcript}
 
 

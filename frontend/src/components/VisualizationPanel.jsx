@@ -166,7 +166,7 @@ function renderTableView(view, table, dark) {
   }
 }
 
-export default function VisualizationPanel({ answer, dark, paused }) {
+export default function VisualizationPanel({ answer, dark, paused, onAsk }) {
   const formats = useMemo(() => detectFormats(answer || ""), [answer]);
   const [activeType, setActiveType] = useState(null);
   const [chartType, setChartType] = useState("bar");
@@ -236,6 +236,24 @@ export default function VisualizationPanel({ answer, dark, paused }) {
           ))}
         </div>
       )}
+
+      {/* Ask about the active visualization */}
+      {activeType && onAsk && (() => {
+        const label = activeType === "chart" ? `Chart (${chartType})` : activeType === "table" ? `Table (${tableViews.includes(tableView) ? tableView : "data"})` : (FORMAT_LABELS[activeType] || activeType);
+        return (
+          <button
+            onClick={() => {
+              const fmt = allTypes.find(f => f.type === activeType);
+              let summary = "";
+              try { summary = JSON.stringify(fmt && fmt.data !== undefined ? fmt.data : answer).slice(0, 800); }
+              catch { summary = String(answer || "").slice(0, 800); }
+              onAsk(label, summary);
+            }}
+            className={`text-xs mb-3 px-3 py-1.5 rounded-full border transition ${dark ? "border-gray-700 text-gray-400 hover:border-orange-500 hover:text-orange-300" : "border-gray-200 text-gray-500 hover:border-orange-400 hover:text-orange-600"}`}>
+            💬 Ask about this {label.toLowerCase()}
+          </button>
+        );
+      })()}
 
       {/* Render */}
       <VizErrorBoundary>

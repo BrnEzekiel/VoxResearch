@@ -77,8 +77,8 @@ Total: ~2:30.
 
 | Time | Show | Say |
 |---|---|---|
-| 0:00–0:20 | Live site, empty chat | "VoxResearch is a voice-first research assistant. I speak or type, and Meta AI answers with live sources." |
-| 0:20–0:50 | Click mic, ask "What causes lightning?", answer streams with citations | "Voice is converted and transcribed, then the answer streams word by word with clickable citations." |
+| 0:00–0:15 | Site open with "What causes lightning?" already pasted — hit send, answer streams instantly with citations (on-screen text: "Live answer + sources") | "VoxResearch is a voice-first research assistant — answers stream in with live sources." |
+| 0:15–0:45 | Jump cut: click mic, speak one short question, transcribed text appears, answer streams | "Voice is converted and transcribed, then the answer streams word by word with clickable citations." |
 | 0:50–1:20 | Ask "Compare solar vs wind energy", open Visualize chips: table, chart, pros-cons | "Every answer sprouts visualizations — tables, charts, comparisons — rendered on demand." |
 | 1:20–1:45 | Click PDF, open the downloaded file | "One click exports a styled PDF — diagrams included as real images." |
 | 1:45–2:10 | Sidebar: sessions, pin, search, rename | "Chats live in sessions with pins, search and rename." |

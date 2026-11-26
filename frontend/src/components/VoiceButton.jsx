@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect } from "react";
 
-export default function VoiceButton({ onRecorded, disabled, dark }) {
+export default function VoiceButton({ onRecorded, onError, disabled, dark }) {
   const [recording, setRecording] = useState(false);
   const [bars, setBars] = useState([3, 5, 3, 7, 4, 6, 3]);
   const mediaRef = useRef(null);
@@ -28,7 +28,13 @@ export default function VoiceButton({ onRecorded, disabled, dark }) {
 
   async function toggle() {
     if (recording) { mediaRef.current?.stop(); return; }
-    const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+    let stream;
+    try {
+      stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+    } catch (_) {
+      onError && onError("🎤 No microphone found — allow mic access and try again.");
+      return;
+    }
     streamRef.current = stream;
     try {
       const ctx = new AudioContext();

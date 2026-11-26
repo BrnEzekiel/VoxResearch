@@ -22,7 +22,9 @@ function dayGroup(ts) {
   return "Older";
 }
 
-export default function HistorySidebar({ open, sessions, activeId, filter, onFilter, onSelect, onNew, onClose, onPin, onDelete, onRename, onDuplicate, onDeleteAll, dark, onExport, settings, onSettings, tab, onTab }) {
+export default function HistorySidebar({ open, sessions, activeId, filter, onFilter, onSelect, onNew, onClose, onPin, onDelete, onRename, onDuplicate, onDeleteAll, dark, onExport, onStats, settings, onSettings, tab, onTab }) {
+  const [tplLabel, setTplLabel] = useState("");
+  const [tplPrompt, setTplPrompt] = useState("");
   const bg = dark ? "bg-gray-900" : "bg-white";
   const item = dark ? "hover:bg-gray-800 text-gray-300" : "hover:bg-orange-50 text-gray-700";
   const inputBg = dark ? "bg-gray-800 border-gray-700 text-white placeholder-gray-500" : "bg-gray-50 border-gray-200 text-gray-900 placeholder-gray-400";
@@ -65,6 +67,9 @@ export default function HistorySidebar({ open, sessions, activeId, filter, onFil
             <div className="px-3 py-2 flex gap-2">
               <input className={`flex-1 rounded-lg border px-3 py-1.5 text-xs focus:outline-none ${inputBg}`}
                 placeholder="Search chats & messages..." value={filter} onChange={e => onFilter(e.target.value)} />
+              {sessions.length > 0 && onStats && (
+                <button onClick={onStats} title="Session stats" className="text-xs text-gray-500 hover:text-orange-400 transition px-1">📊</button>
+              )}
               {sessions.length > 0 && onExport && (
                 <button onClick={() => onExport("md")} className="text-xs text-gray-500 hover:text-orange-400 transition px-1">Export</button>
               )}
@@ -106,13 +111,27 @@ export default function HistorySidebar({ open, sessions, activeId, filter, onFil
             {/* Templates */}
             <div>
               <p className={`text-xs font-semibold uppercase tracking-widest mb-2 ${dark ? "text-gray-500" : "text-gray-400"}`}>Templates</p>
-              <div className="space-y-1">
+              <div className="space-y-1 max-h-64 overflow-y-auto">
                 {settings.templates.map(t => (
-                  <button key={t.label} onClick={() => onSettings("template", t.prompt)}
-                    className={`w-full text-left text-sm px-3 py-2 rounded-lg border transition ${dark ? "border-gray-700 text-gray-300 hover:border-gray-500" : "border-gray-200 text-gray-600 hover:border-gray-400"}`}>
-                    {t.label} <span className={`text-xs ${dark ? "text-gray-600" : "text-gray-400"}`}>— {t.prompt}</span>
-                  </button>
+                  <div key={t.label} className="flex gap-1">
+                    <button onClick={() => onSettings("template", t.prompt)}
+                      className={`flex-1 min-w-0 text-left text-sm px-3 py-2 rounded-lg border transition ${dark ? "border-gray-700 text-gray-300 hover:border-gray-500" : "border-gray-200 text-gray-600 hover:border-gray-400"}`}>
+                      {t.label} <span className={`text-xs ${dark ? "text-gray-600" : "text-gray-400"}`}>— {t.prompt}</span>
+                    </button>
+                    {t.custom && (
+                      <button onClick={() => onSettings("deleteTemplate", t.label)} title="Delete template"
+                        className={`flex-shrink-0 px-2 rounded-lg border text-xs ${dark ? "border-gray-700 text-gray-500 hover:text-red-400" : "border-gray-200 text-gray-400 hover:text-red-500"}`}>✕</button>
+                    )}
+                  </div>
                 ))}
+              </div>
+              <div className="flex gap-1 mt-2">
+                <input value={tplLabel} onChange={e => setTplLabel(e.target.value)} placeholder="Name"
+                  className={`w-20 rounded-lg border px-2 py-1.5 text-xs focus:outline-none ${inputBg}`} />
+                <input value={tplPrompt} onChange={e => setTplPrompt(e.target.value)} placeholder="Prompt starter…"
+                  className={`flex-1 min-w-0 rounded-lg border px-2 py-1.5 text-xs focus:outline-none ${inputBg}`} />
+                <button onClick={() => { if (tplLabel.trim() && tplPrompt.trim()) { onSettings("addTemplate", { label: tplLabel.trim(), prompt: tplPrompt.trim() }); setTplLabel(""); setTplPrompt(""); } }}
+                  className="flex-shrink-0 px-3 rounded-lg bg-orange-500 hover:bg-orange-400 text-white text-xs font-semibold transition">Add</button>
               </div>
             </div>
             {/* Accent color */}
@@ -147,6 +166,14 @@ export default function HistorySidebar({ open, sessions, activeId, filter, onFil
               <button onClick={() => onSettings("showShortcuts", true)}
                 className={`w-full text-left text-sm px-3 py-2 rounded-lg border transition mt-2 ${dark ? "border-gray-700 text-gray-300" : "border-gray-200 text-gray-600"}`}>
                 Keyboard shortcuts
+              </button>
+              <button onClick={() => onSettings("showKiro", true)}
+                className={`w-full text-left text-sm px-3 py-2 rounded-lg border transition mt-2 ${dark ? "border-gray-700 text-gray-300" : "border-gray-200 text-gray-600"}`}>
+                🧡 Built with Kiro — see the proof
+              </button>
+              <button onClick={() => onSettings("showChangelog", true)}
+                className={`w-full text-left text-sm px-3 py-2 rounded-lg border transition mt-2 ${dark ? "border-gray-700 text-gray-300" : "border-gray-200 text-gray-600"}`}>
+                ✨ What's new
               </button>
             </div>
           </div>

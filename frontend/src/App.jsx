@@ -4,9 +4,13 @@ import ResultCard from "./components/ResultCard";
 import HistorySidebar from "./components/HistorySidebar";
 import SearchSkeleton from "./components/SearchSkeleton";
 
+import { Ghost, GhostCaption, Pumpkin, Bats } from "./components/GhostGuide";
 import KiroTimeline from "./components/KiroTimeline";
 import ShortcutOverlay from "./components/ShortcutOverlay";
 import DataPanel from "./components/DataPanel";
+import StatsPanel from "./components/StatsPanel";
+import KiroPanel from "./components/KiroPanel";
+import ChangelogModal from "./components/ChangelogModal";
 import { exportConversationPDF } from "./utils/exportPDF";
 import { getDeviceId, getMessagesLeft, getUsedCount, setUsedCount, recordMessage, reconcileQuota, MESSAGE_LIMIT } from "./utils/deviceQuota";
 import { blobToWavDataUrl } from "./utils/audioToWav";
@@ -34,6 +38,14 @@ const TEMPLATES = [
   { label: "Pros & Cons", prompt: "Give me the pros and cons of: " },
   { label: "Table", prompt: "Summarize in a comparison table: " },
   { label: "Steps", prompt: "Give me step-by-step instructions for: " },
+  { label: "Debate", prompt: "Stage a short debate with two sides arguing: " },
+  { label: "Timeline", prompt: "Lay out the key events on a timeline for: " },
+  { label: "Quiz me", prompt: "Quiz me with 5 questions about: " },
+  { label: "Key stats", prompt: "Give me the 5 most important statistics about: " },
+  { label: "Beginner", prompt: "Teach me the basics of: " },
+  { label: "Expert", prompt: "Give me an expert-level deep dive into: " },
+  { label: "Myths", prompt: "Bust the common myths about: " },
+  { label: "Decide", prompt: "Help me decide: " },
 ];
 
 // Image bytes live here (memory only) so big screenshots never blow up localStorage.
@@ -108,6 +120,12 @@ export default function App() {
   const [attachSpin, setAttachSpin] = useState(false);
   const [attachment, setAttachment] = useState(null);
   const [quotaLeft, setQuotaLeft] = useState(() => getMessagesLeft());
+  const [customTemplates, setCustomTemplates] = useState(() => {
+    try { return JSON.parse(localStorage.getItem("vox_templates") || "[]"); } catch { return []; }
+  });
+  const [showStats, setShowStats] = useState(false);
+  const [showKiro, setShowKiro] = useState(false);
+  const [showChangelog, setShowChangelog] = useState(false);
   const bottomRef = useRef(null);
   const inputRef = useRef(null);
   const abortRef = useRef(null);
@@ -148,6 +166,7 @@ export default function App() {
   useEffect(() => { localStorage.setItem("vox_ratings", JSON.stringify(ratings)); }, [ratings]);
   useEffect(() => { localStorage.setItem("vox_accent", accentKey); }, [accentKey]);
   useEffect(() => { localStorage.setItem("vox_fontsize", fontSize); }, [fontSize]);
+  useEffect(() => { try { localStorage.setItem("vox_templates", JSON.stringify(customTemplates)); } catch {} }, [customTemplates]);
   // Applied to <html> so every rem-based size in the app scales together.
   useEffect(() => { document.documentElement.style.fontSize = `${fontSize}px`; }, [fontSize]);
   useEffect(() => {
@@ -187,11 +206,11 @@ export default function App() {
     setSuggestions(val.length > 1 ? SUGGESTIONS.filter(s => s.toLowerCase().includes(val.toLowerCase())) : []);
   }
 
-  async function doSearch(text, isCompare = false) {
+  async function doSearch(text, isCompare = false, backendOverride = null) {
     const q = (text || query).trim();
     if (!q) return;
     if (getMessagesLeft() <= 0) {
-      setError(`You've used your ${MESSAGE_LIMIT} free messages on this device.`);
+      setError(`👻 Your ${MESSAGE_LIMIT} treats are all gone — this device is out of free messages.`);
       return;
     }
     setSuggestions([]);
@@ -200,10 +219,10 @@ export default function App() {
 
     const turnId = Date.now();
     // Text attachments ride along with the question so the AI can actually use them.
-    const sentAttachment = !isCompare ? attachment : null;
-    const backendQuery = sentAttachment && sentAttachment.kind === "text" && sentAttachment.text
+    const sentAttachment = (!isCompare && !backendOverride) ? attachment : null;
+    const backendQuery = backendOverride || (sentAttachment && sentAttachment.kind === "text" && sentAttachment.text
       ? `${q}\n\n[Attached file "${sentAttachment.name}"]:\n${sentAttachment.text}`
-      : q;
+      : q);
     if (sentAttachment) setAttachment(null);
     const newTurn = {
       id: turnId, query: q, answer: null, streaming: "", citations: [], related: [], grounded: false,
@@ -243,7 +262,7 @@ export default function App() {
         signal: abortRef.current.signal,
       });
       if (res.status === 429) {
-        let msg = `You've used your ${MESSAGE_LIMIT} free messages on this device.`;
+        let msg = `👻 Your ${MESSAGE_LIMIT} treats are all gone — this device is out of free messages.`;
         try { const j = JSON.parse(await res.text()); if (j.error) msg = j.error; } catch {}
         setQuotaLeft(0);
         throw new Error(msg);
@@ -292,7 +311,11 @@ export default function App() {
         flushTokens();
         setter(t => ({ ...t, answer: t.streaming || t.answer || "(stopped)", streaming: "" }));
       } else {
-        setError(e.message);
+        const raw = e.message || "Something went wrong.";
+        const friendly = /failed to fetch|networkerror|load failed|network request failed/i.test(raw)
+          ? "👻 The spirits couldn't be reached — check your connection and try again."
+          : raw;
+        setError(friendly);
         if (!isCompare) updateTurns(prev => prev.filter(t => t.id !== turnId));
         else setCompareTurns(prev => prev.filter(t => t.id !== turnId));
       }
@@ -312,6 +335,24 @@ export default function App() {
     for (const q of qs) await doSearch(q);
   }
 
+  function doVerify(turn) {
+    if (!turn || !turn.answer) return;
+    doSearch(`🛡 Fact-check: ${turn.query}`, false,
+      `Fact-check the following answer. For each factual claim give: verdict (correct / wrong / unverifiable) plus a one-line correction where needed. End with an overall score out of 10. Keep it tight.\n\nOriginal question: ${turn.query}\n\nAnswer to check:\n${turn.answer.slice(0, 5000)}`);
+  }
+
+  function doFollowUp(turn, text) {
+    if (!turn || !text) return;
+    doSearch(text, false,
+      `Earlier question: ${turn.query}\nEarlier answer:\n${(turn.answer || turn.streaming || "").slice(0, 4000)}\n\nFollow-up question: ${text}\n(Answer the follow-up using the earlier answer as context.)`);
+  }
+
+  function doVizAsk(turn, label, summary) {
+    if (!turn) return;
+    doSearch(`About this ${String(label || "visual").toLowerCase()}: key insight`, false,
+      `The user is looking at a ${label} generated from this answer to "${turn.query}".\nVisualization data (may be truncated):\n${summary}\n\nExplain the single most important insight this visualization shows, in 2-3 sentences.`);
+  }
+
   async function handleVoice(audioBlob) {
     setLoading(true); setError(null); setTranscript("");
     try {
@@ -323,7 +364,11 @@ export default function App() {
         body: JSON.stringify({ audio: dataUrl, filename: "recording.wav", mime: "audio/wav", deviceId: getDeviceId() }),
       });
       if (!res.ok) throw new Error(await res.text());
-      const data = await res.json(); setTranscript(data.transcript);
+      const data = await res.json();
+      if (!data.transcript || !data.transcript.trim()) {
+        throw new Error("👻 I didn't catch that — try speaking a little louder and closer to the mic.");
+      }
+      setTranscript(data.transcript);
       await doSearch(data.transcript);
     } catch (e) { setError(e.message); setLoading(false); }
   }
@@ -483,21 +528,28 @@ export default function App() {
         onDeleteAll={deleteAllSessions}
         dark={darkMode}
         onExport={exportFullConversation}
-        settings={{ dark: darkMode, accent: accentKey, fontSize, compareMode, templates: TEMPLATES }}
+        settings={{ dark: darkMode, accent: accentKey, fontSize, compareMode, templates: [...TEMPLATES, ...customTemplates] }}
+        onStats={() => { setShowStats(true); setSidebarOpen(false); }}
         onSettings={(key, val) => {
           if (key === "accent") setAccentKey(val);
           if (key === "fontSize") setFontSize(val);
           if (key === "compareMode") setCompareMode(val);
           if (key === "template") { setQuery(val); setSidebarOpen(false); setTimeout(() => inputRef.current?.focus(), 100); }
+          if (key === "addTemplate" && val && val.label && val.prompt) {
+            setCustomTemplates(prev => [...prev.filter(t => t.label !== val.label), { label: String(val.label).slice(0, 24), prompt: String(val.prompt).slice(0, 200), custom: true }]);
+          }
+          if (key === "deleteTemplate") setCustomTemplates(prev => prev.filter(t => t.label !== val));
           if (key === "showTimeline") { setShowTimeline(true); setSidebarOpen(false); }
           if (key === "showShortcuts") { setShowShortcuts(true); setSidebarOpen(false); }
+          if (key === "showKiro") { setShowKiro(true); setSidebarOpen(false); }
+          if (key === "showChangelog") { setShowChangelog(true); setSidebarOpen(false); }
         }}
         tab={sidebarTab} onTab={setSidebarTab}
       />
 
       {/* Main — shifts right when sidebar opens (desktop only) */}
       <div className={`flex flex-col min-h-screen ml-0 transition-all duration-300 ${sidebarOpen ? "md:ml-72" : "md:ml-12"}`}>
-        {offline && <div className="w-full bg-red-500 text-white text-xs text-center py-1.5 z-50">You are offline</div>}
+        {offline && <div className="w-full bg-red-500 text-white text-xs text-center py-1.5 z-50">👻 You're offline — even ghosts need Wi-Fi</div>}
 
         {/* Top bar — title left, controls right; neither can ever overlap */}
         <div className={`sticky top-0 z-10 w-full px-4 sm:px-5 py-2.5 flex items-center gap-2 ${topBar} backdrop-blur`}>
@@ -509,7 +561,7 @@ export default function App() {
           </button>
           <span className={`flex-1 min-w-0 truncate text-left text-base sm:text-lg font-bold tracking-tight ${accent.text}`}
             style={{ textShadow: `0 0 20px ${accent.hex}40` }}>
-            VoxResearch
+            VoxResearch 🎃
           </span>
 
           {/* Right: language, length, clear — exact size, never squeezed */}
@@ -536,16 +588,34 @@ export default function App() {
           <div className="w-full px-4 sm:px-10 md:px-16 lg:px-20 py-8">
 
             {turns.length === 0 && !loading && (
-              <div className="text-center py-24">
-                <h2 className={`text-5xl font-bold ${accent.text} mb-4`}
-                  style={{ textShadow: `0 0 40px ${accent.hex}30` }}>
+              <div className="text-center py-24 relative">
+                <Bats />
+                <div className="absolute left-1/2 top-10 -translate-x-1/2 w-[36rem] max-w-full h-72 pointer-events-none"
+                  style={{ background: "radial-gradient(ellipse at center, rgba(249,115,22,0.14) 0%, rgba(168,85,247,0.07) 45%, transparent 70%)" }} />
+                <div className="relative">
+                  <div className="relative flex justify-center">
+                    <Ghost size={132} />
+                  </div>
+                  <div className="absolute bottom-2 pointer-events-none" style={{ left: "calc(50% + 80px)" }}>
+                    <Pumpkin size={72} />
+                  </div>
+                </div>
+                <h2 className="text-5xl font-bold mb-4 mt-4 bg-gradient-to-r from-orange-500 via-amber-500 to-purple-600 bg-clip-text text-transparent"
+                  style={{ filter: "drop-shadow(0 0 24px rgba(249,115,22,0.25))" }}>
                   VoxResearch
                 </h2>
-                <p className={`text-lg mb-10 ${mutedText}`}>Ask anything. Get live cited answers.</p>
+                <p className={`text-lg mb-2 ${mutedText}`}>Ask anything. Get live cited answers.</p>
+                <div className="mb-3"><GhostCaption className={mutedText} /></div>
+                <div className="mb-10">
+                  <span className="inline-block text-xs font-semibold px-4 py-1.5 rounded-full border border-orange-200 bg-orange-50 text-orange-700">
+                    🦇 Happy Kiroween — ask if you dare 👻
+                  </span>
+                </div>
+                <p className={`text-xs font-semibold uppercase tracking-widest mb-3 ${mutedText}`}>⚡ Instant tries — one tap, full answer</p>
                 <div className="flex flex-wrap justify-center gap-2 max-w-2xl mx-auto">
                   {SUGGESTIONS.slice(0, 6).map((s, i) => (
                     <button key={i} onClick={() => doSearch(s)}
-                      className={`text-sm px-4 py-2 rounded-full border transition ${darkMode ? "border-gray-800 text-gray-400 hover:border-gray-600 hover:text-gray-200" : "border-gray-200 text-gray-500 hover:border-gray-400 hover:text-gray-700"}`}>
+                      className={`text-sm px-4 py-2 rounded-full border transition ${darkMode ? "border-gray-800 text-gray-400 hover:border-gray-600 hover:text-gray-200" : "border-gray-200 text-gray-500 hover:border-orange-300 hover:text-orange-700 hover:shadow-[0_0_18px_rgba(249,115,22,0.35)]"}`}>
                       {s}
                     </button>
                   ))}
@@ -557,15 +627,15 @@ export default function App() {
               <div className="grid grid-cols-1 lg:grid-cols-2 gap-10">
                 <div>
                   <p className={`text-xs font-semibold uppercase tracking-widest mb-6 ${mutedText}`}>Column A</p>
-                  {turns.map(t => <TurnBlock key={t.id} turn={t} dark={darkMode} accent={accent} userBubble={userBubble} onRelated={doSearch} onShare={handleShare} shareMsg={shareMsg} onSaveMd={saveMarkdown} ratings={ratings} onRate={(id,v) => setRatings(r=>({...r,[id]:v}))} onReSearch={doSearch} />)}
+                  {turns.map(t => <TurnBlock key={t.id} turn={t} dark={darkMode} accent={accent} userBubble={userBubble} onRelated={doSearch} onShare={handleShare} shareMsg={shareMsg} onSaveMd={saveMarkdown} ratings={ratings} onRate={(id,v) => setRatings(r=>({...r,[id]:v}))} onReSearch={doSearch} onVerify={doVerify} onFollowUp={doFollowUp} onAskViz={doVizAsk} />)}
                 </div>
                 <div>
                   <p className={`text-xs font-semibold uppercase tracking-widest mb-6 ${mutedText}`}>Column B</p>
-                  {compareTurns.map(t => <TurnBlock key={t.id} turn={t} dark={darkMode} accent={accent} userBubble={userBubble} onRelated={doSearch} onShare={handleShare} shareMsg={shareMsg} onSaveMd={saveMarkdown} ratings={ratings} onRate={(id,v) => setRatings(r=>({...r,[id]:v}))} onReSearch={q => doSearch(q,true)} />)}
+                  {compareTurns.map(t => <TurnBlock key={t.id} turn={t} dark={darkMode} accent={accent} userBubble={userBubble} onRelated={doSearch} onShare={handleShare} shareMsg={shareMsg} onSaveMd={saveMarkdown} ratings={ratings} onRate={(id,v) => setRatings(r=>({...r,[id]:v}))} onReSearch={q => doSearch(q,true)} onVerify={doVerify} onFollowUp={doFollowUp} onAskViz={doVizAsk} />)}
                 </div>
               </div>
             ) : (
-              turns.map(t => <TurnBlock key={t.id} turn={t} dark={darkMode} accent={accent} userBubble={userBubble} onRelated={doSearch} onShare={handleShare} shareMsg={shareMsg} onSaveMd={saveMarkdown} ratings={ratings} onRate={(id,v) => setRatings(r=>({...r,[id]:v}))} onReSearch={doSearch} />)
+              turns.map(t => <TurnBlock key={t.id} turn={t} dark={darkMode} accent={accent} userBubble={userBubble} onRelated={doSearch} onShare={handleShare} shareMsg={shareMsg} onSaveMd={saveMarkdown} ratings={ratings} onRate={(id,v) => setRatings(r=>({...r,[id]:v}))} onReSearch={doSearch} onVerify={doVerify} onFollowUp={doFollowUp} onAskViz={doVizAsk} />)
             )}
 
             {loading && <SearchSkeleton dark={darkMode} />}
@@ -592,6 +662,11 @@ export default function App() {
             </div>
           </div>
         )}
+
+        {/* Stats / Kiro / Changelog modals */}
+        {showStats && <StatsPanel sessions={sessions} dark={darkMode} onClose={() => setShowStats(false)} />}
+        {showKiro && <KiroPanel dark={darkMode} onClose={() => setShowKiro(false)} />}
+        {showChangelog && <ChangelogModal dark={darkMode} onClose={() => setShowChangelog(false)} />}
 
         {/* Data lab modal */}
         {showData && (
@@ -686,7 +761,7 @@ export default function App() {
                 Send
               </button>
             )}
-            <VoiceButton onRecorded={handleVoice} disabled={loading} dark={darkMode} />
+            <VoiceButton onRecorded={handleVoice} onError={setError} disabled={loading} dark={darkMode} />
           </div>
           <div className="flex items-center justify-between mt-2">
             <span className={`text-[11px] ${mutedText}`}>{query.length > 0 ? `${query.length} chars` : ""}</span>
@@ -699,7 +774,7 @@ export default function App() {
   );
 }
 
-const TurnBlock = memo(function TurnBlock({ turn, dark, accent, userBubble, onRelated, onShare, shareMsg, onSaveMd, ratings, onRate, onReSearch }) {
+const TurnBlock = memo(function TurnBlock({ turn, dark, accent, userBubble, onRelated, onShare, shareMsg, onSaveMd, ratings, onRate, onReSearch, onVerify, onFollowUp, onAskViz }) {
   const wordCount = (turn.answer || turn.streaming || "").split(/\s+/).filter(Boolean).length;
   const mutedText = dark ? "text-gray-600" : "text-gray-300";
   return (
@@ -737,6 +812,9 @@ const TurnBlock = memo(function TurnBlock({ turn, dark, accent, userBubble, onRe
           rating={ratings[turn.id]}
           onRate={v => onRate(turn.id, v)}
           onReSearch={() => onReSearch(turn.query)}
+          onVerify={() => onVerify(turn)}
+          onFollowUp={text => onFollowUp(turn, text)}
+          onAskViz={(label, summary) => onAskViz(turn, label, summary)}
         />
       )}
 

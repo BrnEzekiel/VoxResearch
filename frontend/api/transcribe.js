@@ -40,7 +40,7 @@ export default async function handler(req, res) {
     let used = 0;
     try { used = await quotaUsed(deviceId); } catch { used = 0; }
     if (used >= QUOTA_LIMIT) {
-      send(res, req, 429, { error: `You've used your ${QUOTA_LIMIT} free messages on this device.` });
+      send(res, req, 429, { error: `👻 Your ${QUOTA_LIMIT} treats are all gone — this device is out of free messages.` });
       return;
     }
     const { audio = "", filename = "recording.webm", mime = "audio/webm" } = req.body || {};
@@ -65,7 +65,7 @@ export default async function handler(req, res) {
       return;
     }
     const result = await r.json();
-    const transcript = (result.turns || []).map((t) => t.text || "").join(" ");
+    const transcript = result.transcript || (result.turns || []).map((t) => t.text || "").join(" ");
     send(res, req, 200, { transcript });
   } catch (e) {
     send(res, req, 500, { error: String((e && e.message) || e) });

@@ -2,12 +2,14 @@ import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { useState, useEffect, useRef, memo } from "react";
 import { exportAnswerPDF } from "../utils/exportPDF";
+import { shareAnswerImage } from "../utils/shareImage";
 import VisualizationPanel from "./VisualizationPanel";
 
 function ResultCard({
   answer, citations, relatedQuestions, grounded, onRelated,
   onShare, shareMsg, dark, query, onSaveMd, wordCount,
   isStreaming, rating, onRate, onReSearch, forceCollapsed,
+  onVerify, onFollowUp, onAskViz,
 }) {
   const [copied, setCopied] = useState(false);
   const [turnCopied, setTurnCopied] = useState(false);
@@ -16,7 +18,44 @@ function ResultCard({
   const [hoveredCite, setHoveredCite] = useState(null);
   const [citeVisible, setCiteVisible] = useState([]);
   const [showAllCites, setShowAllCites] = useState(false);
+  const [pdfState, setPdfState] = useState("idle");
+  const [shareState, setShareState] = useState("idle");
+  const [actionError, setActionError] = useState("");
+  const [showFollow, setShowFollow] = useState(false);
+  const [followText, setFollowText] = useState("");
   const rootRef = useRef(null);
+
+  async function handlePdf() {
+    setPdfState("working"); setActionError("");
+    try {
+      const how = await exportAnswerPDF(query, answer, citations, rootRef.current);
+      setPdfState(how === "shared" ? "shared" : "done");
+    } catch (e) {
+      setPdfState("error");
+      setActionError(`PDF failed: ${(e && e.message) || "unknown error"}`);
+    }
+    setTimeout(() => setPdfState(s => (s === "error" ? s : "idle")), 2500);
+  }
+
+  async function handleShareImg() {
+    setShareState("working"); setActionError("");
+    try {
+      const how = await shareAnswerImage(rootRef.current, query);
+      setShareState(how === "shared" ? "shared" : "done");
+    } catch (e) {
+      setShareState("error");
+      setActionError(`Image failed: ${(e && e.message) || "unknown error"}`);
+    }
+    setTimeout(() => setShareState(s => (s === "error" ? s : "idle")), 2500);
+  }
+
+  function submitFollow() {
+    const t = followText.trim();
+    if (!t || !onFollowUp) return;
+    setFollowText("");
+    setShowFollow(false);
+    onFollowUp(t);
+  }
 
   useEffect(() => {
     if (typeof forceCollapsed === "boolean") setCollapsed(forceCollapsed);
@@ -73,6 +112,7 @@ function ResultCard({
             {grounded ? "Web grounded" : "From memory"}
           </span>
           {citations.length > 0 && <span className={`text-xs ${mutedColor}`}>{citations.length} source{citations.length !== 1 ? "s" : ""}</span>}
+          <span className={`text-xs ${mutedColor}`}>{grounded ? "⚡ muse-spark-1.3 · live" : "🧠 from memory"}</span>
           {wordCount > 0 && <span className={`text-xs ${mutedColor}`}>{wordCount} words · {readMins} min read</span>}
         </div>
         <div className="flex items-center gap-3 flex-wrap">
@@ -85,10 +125,33 @@ function ResultCard({
           <button onClick={copyAnswer} className={`text-xs ${actionBtn}`}>{copied ? "Copied" : "Copy"}</button>
           <button onClick={copyTurn} className={`text-xs ${actionBtn}`} title="Copy question + answer">{turnCopied ? "Copied!" : "Copy Q+A"}</button>
           <button onClick={onSaveMd} className={`text-xs ${actionBtn}`}>.md</button>
-          <button onClick={() => exportAnswerPDF(query, answer, citations, rootRef.current)} className={`text-xs ${actionBtn}`}>PDF</button>
+          <button onClick={handlePdf} className={`text-xs ${actionBtn}`} title="Download styled PDF">
+            {pdfState === "idle" ? "PDF" : pdfState === "working" ? "PDF…" : pdfState === "shared" ? "Shared!" : pdfState === "done" ? "Saved!" : "Retry PDF"}
+          </button>
+          <button onClick={handleShareImg} className={`text-xs ${actionBtn}`} title="Share as branded image">
+            {shareState === "idle" ? "Share img" : shareState === "working" ? "Rendering…" : shareState === "shared" ? "Shared!" : shareState === "done" ? "Saved!" : "Retry img"}
+          </button>
+          <button onClick={onVerify} className={`text-xs ${actionBtn}`} title="Fact-check this answer">Verify</button>
+          <button onClick={() => setShowFollow(s => !s)} className={`text-xs ${actionBtn}`} title="Ask a follow-up about this answer">Follow-up</button>
           <button onClick={onShare} className={`text-xs ${actionBtn}`}>{shareMsg || "Copy link"}</button>
         </div>
       </div>
+      {actionError && <p className="text-xs text-red-500 mt-2">{actionError}</p>}
+      {showFollow && (
+        <div className="flex gap-2 mt-3 mb-1">
+          <input
+            value={followText}
+            onChange={e => setFollowText(e.target.value)}
+            onKeyDown={e => e.key === "Enter" && submitFollow()}
+            placeholder="Ask a follow-up about this answer…"
+            className={`flex-1 rounded-xl border px-4 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-orange-400 ${dark ? "bg-gray-900 border-gray-700 text-white placeholder-gray-500" : "bg-white border-gray-200 text-gray-900 placeholder-gray-400"}`}
+          />
+          <button onClick={submitFollow} disabled={!followText.trim()}
+            className="flex-shrink-0 bg-orange-500 hover:bg-orange-400 disabled:opacity-40 text-white text-sm font-semibold px-4 py-2 rounded-xl transition">
+            Ask
+          </button>
+        </div>
+      )}
 
       {!collapsed && (
         <>
@@ -148,7 +211,7 @@ function ResultCard({
             </ReactMarkdown>
           </div>
 
-          <VisualizationPanel answer={answer} dark={dark} paused={isStreaming} />
+          <VisualizationPanel answer={answer} dark={dark} paused={isStreaming} onAsk={onAskViz} />
 
           {citations.length > 0 && (
             <div className={`mt-6 pt-4 border-t ${divider}`}>

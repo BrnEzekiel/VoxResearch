@@ -12,3 +12,38 @@
   .line-clamp-1 { overflow: hidden; display: -webkit-box; -webkit-line-clamp: 1; -webkit-box-orient: vertical; }
   .line-clamp-2 { overflow: hidden; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
 }
+
+/* Friendly ghost guide — float, wave, shadow pulse */
+@keyframes ghost-float {
+  0%, 100% { transform: translateY(0) rotate(-1.5deg); }
+  50% { transform: translateY(-10px) rotate(1.5deg); }
+}
+@keyframes ghost-shadow {
+  0%, 100% { transform: scaleX(1); opacity: 0.25; }
+  50% { transform: scaleX(0.72); opacity: 0.12; }
+}
+@keyframes ghost-wave {
+  0%, 100% { transform: rotate(0deg); }
+  50% { transform: rotate(-28deg); }
+}
+.ghost-float { animation: ghost-float 3.2s ease-in-out infinite; transform-origin: center; }
+.ghost-shadow { animation: ghost-shadow 3.2s ease-in-out infinite; transform-origin: center; }
+.ghost-wave { animation: ghost-wave 1.6s ease-in-out infinite; transform-origin: 88px 52px; }
+
+/* Halloween bats — drift across, wings flap */
+@keyframes bat-drift {
+  0% { transform: translateX(-12vw) translateY(0); }
+  50% { transform: translateX(45vw) translateY(-16px); }
+  100% { transform: translateX(110vw) translateY(0); }
+}
+@keyframes bat-flap-l {
+  0%, 100% { transform: rotate(20deg); }
+  50% { transform: rotate(-26deg); }
+}
+@keyframes bat-flap-r {
+  0%, 100% { transform: rotate(-20deg); }
+  50% { transform: rotate(26deg); }
+}
+.bat-drift { animation: bat-drift linear infinite; }
+.bat-wing-l { transform-box: fill-box; transform-origin: 100% 85%; animation: bat-flap-l 0.45s ease-in-out infinite; }
+.bat-wing-r { transform-box: fill-box; transform-origin: 0% 85%; animation: bat-flap-r 0.45s ease-in-out infinite; }

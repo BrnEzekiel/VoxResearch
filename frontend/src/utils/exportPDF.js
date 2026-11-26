@@ -230,6 +230,26 @@ async function renderAnswerBlocks(doc, answer, y, MARGIN, CONTENT_W, diagrams) {
     if (rows.length < 2) return;
     const headers = rows[0];
     const body = rows.slice(1);
+    // autotable plugin missing (version skew) → plain-text fallback, never crash.
+    if (typeof doc.autoTable !== "function") {
+      y = ensureSpace(doc, y, 12);
+      doc.setFontSize(9);
+      doc.setFont("helvetica", "bold");
+      doc.setTextColor(30, 30, 30);
+      const hw = doc.splitTextToSize(headers.join("  |  "), CONTENT_W);
+      doc.text(hw, MARGIN, y);
+      y += hw.length * 5 + 2;
+      doc.setFont("helvetica", "normal");
+      doc.setTextColor(60, 60, 60);
+      for (const r of body) {
+        const lw = doc.splitTextToSize(r.join("  |  "), CONTENT_W);
+        y = ensureSpace(doc, y, 10);
+        doc.text(lw, MARGIN, y);
+        y += lw.length * 5 + 1;
+      }
+      y += 3;
+      return;
+    }
     y = ensureSpace(doc, y, 40);
     doc.autoTable({
       startY: y,
@@ -409,6 +429,48 @@ function drawFooters(doc, W, MARGIN) {
   }
 }
 
+function isMobileDevice() {
+  try {
+    return /android|iphone|ipad|ipod|mobile/i.test(navigator.userAgent || "") ||
+      (navigator.maxTouchPoints > 1 && !/windows|macintosh/i.test(navigator.userAgent || ""));
+  } catch { return false; }
+}
+
+// Deliver a built jsPDF doc: anchor download on desktop, share sheet on
+// mobile (programmatic downloads silently fail there), new-tab fallback.
+// Returns "shared" | "downloaded" | "opened". Never fails silently.
+async function deliverPdf(doc, filename) {
+  const blob = doc.output("blob");
+  const file = new File([blob], filename, { type: "application/pdf" });
+  // Mobile share sheet first (must stay in the tap gesture chain — the
+  // caller awaits generation, so this can throw NotAllowedError; fall through).
+  if (isMobileDevice()) {
+    try {
+      if (navigator.canShare && navigator.canShare({ files: [file] })) {
+        await navigator.share({ files: [file], title: filename });
+        return "shared";
+      }
+    } catch { /* fall through to download/tab */ }
+  }
+  const url = URL.createObjectURL(blob);
+  try {
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+  } catch { /* fall through to tab */ }
+  // iOS Safari ignores the download attribute — opening the blob works.
+  if (isMobileDevice()) {
+    window.open(url, "_blank", "noopener");
+    setTimeout(() => URL.revokeObjectURL(url), 60000);
+    return "opened";
+  }
+  setTimeout(() => URL.revokeObjectURL(url), 10000);
+  return "downloaded";
+}
+
 export async function exportAnswerPDF(query, answer, citations, scopeEl) {
   const { default: jsPDF } = await import("jspdf");
   await import("jspdf-autotable");
@@ -444,7 +506,8 @@ export async function exportAnswerPDF(query, answer, citations, scopeEl) {
 
   y = await renderAnswerBlocks(doc, answer, y, MARGIN, CONTENT_W, collectRenderedDiagrams(scopeEl));
 
-  if (citations.length > 0) {
+  const cites = citations || [];
+  if (cites.length > 0) {
     y = ensureSpace(doc, y, 40);
     y += 6;
     doc.setDrawColor(230, 230, 230);
@@ -457,7 +520,7 @@ export async function exportAnswerPDF(query, answer, citations, scopeEl) {
     doc.text("SOURCES", MARGIN, y);
     y += 6;
 
-    citations.forEach((c, i) => {
+    cites.forEach((c, i) => {
       y = ensureSpace(doc, y, 16);
       doc.setFontSize(8.5);
       doc.setFont("helvetica", "bold");
@@ -479,7 +542,7 @@ export async function exportAnswerPDF(query, answer, citations, scopeEl) {
   }
 
   drawFooters(doc, W, MARGIN);
-  doc.save(`voxresearch-${slugify(query)}.pdf`);
+  return deliverPdf(doc, `voxresearch-${slugify(query)}.pdf`);
 }
 
 export async function exportConversationPDF(turns) {
@@ -515,5 +578,5 @@ export async function exportConversationPDF(turns) {
   }
 
   drawFooters(doc, W, MARGIN);
-  doc.save(`voxresearch-conversation-${slugify(turns[0]?.query || "export")}.pdf`);
+  return deliverPdf(doc, `voxresearch-conversation-${slugify((turns[0] && turns[0].query) || "export")}.pdf`);
 }

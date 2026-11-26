@@ -7,6 +7,7 @@ export default function SearchSkeleton({ dark }) {
         <div className="w-3 h-3 rounded-full bg-orange-400 animate-bounce" style={{ animationDelay: "0ms" }} />
         <div className="w-3 h-3 rounded-full bg-orange-400 animate-bounce" style={{ animationDelay: "150ms" }} />
         <div className="w-3 h-3 rounded-full bg-orange-400 animate-bounce" style={{ animationDelay: "300ms" }} />
+        <span className={`text-xs ml-2 ${dark ? "text-gray-500" : "text-gray-400"}`}>Consulting the spirits…</span>
       </div>
       <div className="space-y-3">
         <div className={`h-4 w-full rounded-full ${base}`} />
