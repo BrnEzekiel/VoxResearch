@@ -20,12 +20,6 @@ function cacheKey(query, language, length) {
   return createHash("sha256").update(`${language || "English"}|${length || "Detailed"}|${norm}`).digest("hex");
 }
 
-function blobUrl(key) {
-  const store = process.env.BLOB_STORE_ID || "";
-  if (!store) return null;
-  return `https://${store}.public.blob.vercel-storage.com/ac/${key}.json`;
-}
-
 function fresh(v) {
   return v && v.text && Date.now() - (v.ts || 0) < CACHE_TTL_MS ? v : null;
 }
@@ -36,12 +30,14 @@ async function cacheGet(key) {
     if (Date.now() - local.ts > CACHE_TTL_MS) answerCache.delete(key);
     else return local;
   }
-  const url = blobUrl(key);
-  if (!url) return null;
+  // L2 via SDK discovery (never hand-build the hostname).
   try {
+    const found = await list({ prefix: `ac/${key}.json` });
+    const blob = (found.blobs || []).find((b) => b.pathname === `ac/${key}.json`);
+    if (!blob) return null;
     const ctl = new AbortController();
     const t = setTimeout(() => ctl.abort(), 4000);
-    const r = await fetch(url, { signal: ctl.signal });
+    const r = await fetch(blob.url, { signal: ctl.signal });
     clearTimeout(t);
     if (!r.ok) return null;
     const v = fresh(await r.json());
