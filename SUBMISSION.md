@@ -157,8 +157,7 @@ search grounding, Muse Voice Transcribe, Edge Config for the quota store.
 ## 5. Your tasks (only you can do these)
 
 1. **Video** — record + upload per script above (~30 min).
-2. **Social Blitz** — post on X/LinkedIn starting with `#KiroweenHackathon26`,
-   your favorite thing about Kiro + how it changed your building. Paste post URL.
+2. **Social Blitz** — DONE: https://x.com/BrnEzekiel/status/2126291496546558037
 3. **Bonus Blog** — same story as a short blog post (Medium/Dev.to/Hashnode),
    mention it's for Kiroween 2026. Paste post URL.
 4. **Submit** — Devpost → Enter a Submission → category Frankenstein,

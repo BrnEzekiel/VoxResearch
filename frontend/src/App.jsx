@@ -22,7 +22,23 @@ const SUGGESTIONS = [
   "How does the human brain work?","What is the James Webb telescope?",
   "Explain blockchain in simple terms","What is climate change?",
   "How does GPT work?","What are black holes?",
+  "Why is the sky blue?","How do vaccines work?",
+  "What caused the fall of Rome?","Explain the stock market simply",
+  "How does GPS actually work?","What is dark matter?",
+  "Latest breakthroughs in cancer research","How do electric cars work?",
+  "What is the metaverse?","Why do we dream?",
+  "How does the internet work?","What is CRISPR?",
+  "Explain inflation like I'm 5","What lives in the deep ocean?",
 ];
+
+function pickTries() {
+  const pool = [...SUGGESTIONS];
+  for (let i = pool.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [pool[i], pool[j]] = [pool[j], pool[i]];
+  }
+  return pool.slice(0, 6);
+}
 
 // Backend lives on the same site in production (/api/*); local dev uses :8000.
 // VITE_API_URL overrides both when set (e.g. pointing prod at another backend).
@@ -97,7 +113,8 @@ export default function App() {
   const [shareMsg, setShareMsg] = useState("");
   const [historyFilter, setHistoryFilter] = useState("");
   const [language, setLanguage] = useState("English");
-  const [answerLength, setAnswerLength] = useState("Detailed");
+  const [answerLength, setAnswerLength] = useState("Brief");
+  const [tries, setTries] = useState(pickTries);
   const [showTimeline, setShowTimeline] = useState(false);
   const [compareMode, setCompareMode] = useState(false);
   const [compareQuery, setCompareQuery] = useState("");
@@ -643,9 +660,15 @@ export default function App() {
                     🦇 Happy Kiroween — ask if you dare 👻
                   </span>
                 </div>
-                <p className={`text-xs font-semibold uppercase tracking-widest mb-3 ${mutedText}`}>⚡ Instant tries — one tap, full answer</p>
+                <p className={`text-xs font-semibold uppercase tracking-widest mb-3 ${mutedText}`}>
+                  ⚡ Instant tries — one tap, full answer{" "}
+                  <button onClick={() => setTries(pickTries())} title="Shuffle questions"
+                    className="underline underline-offset-2 decoration-dotted hover:text-orange-500 transition">
+                    shuffle
+                  </button>
+                </p>
                 <div className="flex flex-wrap justify-center gap-2 max-w-2xl mx-auto">
-                  {SUGGESTIONS.slice(0, 6).map((s, i) => (
+                  {tries.map((s, i) => (
                     <button key={i} onClick={() => doSearch(s)}
                       className={`text-sm px-4 py-2 rounded-full border transition ${darkMode ? "border-gray-800 text-gray-400 hover:border-gray-600 hover:text-gray-200" : "border-gray-200 text-gray-500 hover:border-orange-300 hover:text-orange-700 hover:shadow-[0_0_18px_rgba(249,115,22,0.35)]"}`}>
                       {s}
