@@ -2,12 +2,14 @@
 // POST {query, context, language, length} -> SSE stream of token/citations/related/done.
 import { quotaUsed, quotaSet, quotaId, QUOTA_LIMIT } from "./_quota.js";
 import { createHash } from "crypto";
+import { put, list, del } from "@vercel/blob";
 
 const META_BASE = "https://api.meta.ai/v1";
 
-// Shared answer cache: repeat questions (any device) never hit the AI.
-// NOTE: module-level = per warm instance. Interface is Redis-ready:
-// swap these three helpers for KV calls with zero handler changes.
+// Shared answer cache, two layers:
+// L1 = in-memory Map (instant, per warm instance).
+// L2 = Vercel Blob (persistent, shared by ALL instances and devices).
+// A repeat question from any device on earth is served free, forever (7d TTL).
 const CACHE_TTL_MS = 7 * 24 * 3600 * 1000;
 const CACHE_MAX = 200;
 const answerCache = new Map();
@@ -18,20 +20,64 @@ function cacheKey(query, language, length) {
   return createHash("sha256").update(`${language || "English"}|${length || "Detailed"}|${norm}`).digest("hex");
 }
 
-function cacheGet(key) {
-  const v = answerCache.get(key);
-  if (!v || Date.now() - v.ts > CACHE_TTL_MS) {
-    answerCache.delete(key);
-    return null;
-  }
-  return v;
+function blobUrl(key) {
+  const store = process.env.BLOB_STORE_ID || "";
+  if (!store) return null;
+  return `https://${store}.public.blob.vercel-storage.com/ac/${key}.json`;
 }
 
-function cacheSet(key, text, citations) {
+function fresh(v) {
+  return v && v.text && Date.now() - (v.ts || 0) < CACHE_TTL_MS ? v : null;
+}
+
+async function cacheGet(key) {
+  const local = answerCache.get(key);
+  if (local) {
+    if (Date.now() - local.ts > CACHE_TTL_MS) answerCache.delete(key);
+    else return local;
+  }
+  const url = blobUrl(key);
+  if (!url) return null;
+  try {
+    const ctl = new AbortController();
+    const t = setTimeout(() => ctl.abort(), 4000);
+    const r = await fetch(url, { signal: ctl.signal });
+    clearTimeout(t);
+    if (!r.ok) return null;
+    const v = fresh(await r.json());
+    if (v) {
+      answerCache.set(key, v);
+      while (answerCache.size > CACHE_MAX) answerCache.delete(answerCache.keys().next().value);
+    }
+    return v;
+  } catch {
+    return null;
+  }
+}
+
+async function cacheSet(key, text, citations) {
   if (!text) return;
-  answerCache.set(key, { text, citations: citations || [], ts: Date.now() });
-  while (answerCache.size > CACHE_MAX) {
-    answerCache.delete(answerCache.keys().next().value);
+  const v = { text, citations: citations || [], ts: Date.now() };
+  answerCache.set(key, v);
+  while (answerCache.size > CACHE_MAX) answerCache.delete(answerCache.keys().next().value);
+  try {
+    await put(`ac/${key}.json`, JSON.stringify(v), {
+      access: "public",
+      contentType: "application/json",
+      addRandomSuffix: false,
+    });
+  } catch {
+    // L2 failure must never break answers; L1 still holds it.
+  }
+  // Occasional janitor: prune expired blobs (5% of writes).
+  if (Math.random() < 0.05) {
+    try {
+      const { blobs } = await list({ prefix: "ac/" });
+      const stale = (blobs || []).filter(
+        (b) => b.uploadedAt && Date.now() - new Date(b.uploadedAt).getTime() > CACHE_TTL_MS
+      );
+      for (const b of stale.slice(0, 20)) await del(b.url).catch(() => {});
+    } catch {}
   }
 }
 
@@ -103,7 +149,7 @@ export default async function handler(req, res) {
 
   // Shared cache FIRST: hits are free even at zero quota.
   const cKey = cacheKey(query, language, length);
-  const hit = cacheGet(cKey);
+  const hit = await cacheGet(cKey);
   let used = 0;
   try { used = await quotaUsed(deviceId); } catch { used = 0; }
   if (hit) {
@@ -290,7 +336,7 @@ export default async function handler(req, res) {
   if (citations && citations.length > 0) res.write(sse({ type: "citations", data: citations }));
   const related = await relatedPromise;
   // Bank the answer for every device, then count this delivery.
-  cacheSet(cKey, fullAnswer, citations);
+  await cacheSet(cKey, fullAnswer, citations);
   // Persist the count only for delivered answers (failures stay free).
   await quotaSet(deviceId, used + 1);
   res.write(sse({ type: "related", data: related }));
