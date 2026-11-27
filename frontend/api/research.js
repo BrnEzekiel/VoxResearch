@@ -1,8 +1,39 @@
 // Vercel serverless function (Node runtime). Same contract as backend/main.py /research:
 // POST {query, context, language, length} -> SSE stream of token/citations/related/done.
 import { quotaUsed, quotaSet, quotaId, QUOTA_LIMIT } from "./_quota.js";
+import { createHash } from "crypto";
 
 const META_BASE = "https://api.meta.ai/v1";
+
+// Shared answer cache: repeat questions (any device) never hit the AI.
+// NOTE: module-level = per warm instance. Interface is Redis-ready:
+// swap these three helpers for KV calls with zero handler changes.
+const CACHE_TTL_MS = 7 * 24 * 3600 * 1000;
+const CACHE_MAX = 200;
+const answerCache = new Map();
+const inflight = new Set();
+
+function cacheKey(query, language, length) {
+  const norm = String(query || "").toLowerCase().trim().replace(/\s+/g, " ");
+  return createHash("sha256").update(`${language || "English"}|${length || "Detailed"}|${norm}`).digest("hex");
+}
+
+function cacheGet(key) {
+  const v = answerCache.get(key);
+  if (!v || Date.now() - v.ts > CACHE_TTL_MS) {
+    answerCache.delete(key);
+    return null;
+  }
+  return v;
+}
+
+function cacheSet(key, text, citations) {
+  if (!text) return;
+  answerCache.set(key, { text, citations: citations || [], ts: Date.now() });
+  while (answerCache.size > CACHE_MAX) {
+    answerCache.delete(answerCache.keys().next().value);
+  }
+}
 
 export const config = { maxDuration: 60 };
 
@@ -53,13 +84,50 @@ export default async function handler(req, res) {
   const key = process.env.META_API_KEY || "";
   const { query = "", context = [], language = "English", length = "Detailed" } = req.body || {};
 
-  // Wipe-proof quota: the count lives server-side, keyed by device fingerprint.
+  // Input cap: oversized prompts never reach the model.
+  if (String(query).length > 4000) {
+    res.writeHead(400, { "Content-Type": "application/json", ...corsHeaders(req) });
+    res.end(JSON.stringify({ error: "Question too long (max 4000 characters)." }));
+    return;
+  }
+
   const deviceId = quotaId(req, req.body && req.body.deviceId);
+
+  // Burst guard: one live generation per device (fail fast, clear retry).
+  if (inflight.has(deviceId)) {
+    res.writeHead(429, { "Content-Type": "application/json", "Retry-After": "5", ...corsHeaders(req) });
+    res.end(JSON.stringify({ error: "One answer at a time — try again in a few seconds." }));
+    return;
+  }
+  inflight.add(deviceId);
+
+  // Shared cache FIRST: hits are free even at zero quota.
+  const cKey = cacheKey(query, language, length);
+  const hit = cacheGet(cKey);
   let used = 0;
   try { used = await quotaUsed(deviceId); } catch { used = 0; }
+  if (hit) {
+    res.writeHead(200, {
+      "Content-Type": "text/event-stream",
+      "Cache-Control": "no-cache, no-transform",
+      "X-Accel-Buffering": "no",
+      "X-Cache": "HIT",
+      "X-Quota-Left": String(Math.max(0, QUOTA_LIMIT - used)),
+      ...corsHeaders(req),
+    });
+    res.write(sse({ type: "token", text: hit.text }));
+    if (hit.citations && hit.citations.length > 0) res.write(sse({ type: "citations", data: hit.citations }));
+    res.write(sse({ type: "done" }));
+    res.end();
+    inflight.delete(deviceId);
+    return;
+  }
+
+  // Wipe-proof quota: the count lives server-side, keyed by device fingerprint.
   if (used >= QUOTA_LIMIT) {
     res.writeHead(429, { "Content-Type": "application/json", ...corsHeaders(req) });
     res.end(JSON.stringify({ error: `👻 Your ${QUOTA_LIMIT} treats are all gone — this device is out of free messages.` }));
+    inflight.delete(deviceId);
     return;
   }
 
@@ -81,6 +149,7 @@ export default async function handler(req, res) {
     "Content-Type": "text/event-stream",
     "Cache-Control": "no-cache, no-transform",
     "X-Accel-Buffering": "no",
+    "X-Cache": "MISS",
     "X-Quota-Left": String(Math.max(0, QUOTA_LIMIT - used - 1)),
     ...corsHeaders(req),
   });
@@ -119,6 +188,7 @@ export default async function handler(req, res) {
 
   let citations = [];
   let streamOk = false;
+  let fullAnswer = "";
   try {
     const r = await fetch(`${META_BASE}/responses`, {
       method: "POST",
@@ -161,6 +231,7 @@ export default async function handler(req, res) {
         if (t === "response.output_text.delta") {
           const d = chunk.delta;
           if (typeof d === "string" && d && !commentaryIds.has(chunk.item_id)) {
+            fullAnswer += d;
             res.write(sse({ type: "token", text: d }));
           }
           return;
@@ -200,24 +271,30 @@ export default async function handler(req, res) {
       if (r2.ok) {
         const { text, citations: c2 } = extractTextAndCitations(await r2.json());
         citations = c2;
+        fullAnswer = text;
         res.write(sse({ type: "token", text }));
       } else {
         res.write(sse({ type: "error", text: await r2.text() }));
         res.end();
+        inflight.delete(deviceId);
         return;
       }
     } catch (e2) {
       res.write(sse({ type: "error", text: String((e2 && e2.message) || e2) }));
       res.end();
+      inflight.delete(deviceId);
       return;
     }
   }
 
   if (citations && citations.length > 0) res.write(sse({ type: "citations", data: citations }));
   const related = await relatedPromise;
+  // Bank the answer for every device, then count this delivery.
+  cacheSet(cKey, fullAnswer, citations);
   // Persist the count only for delivered answers (failures stay free).
   await quotaSet(deviceId, used + 1);
   res.write(sse({ type: "related", data: related }));
   res.write(sse({ type: "done" }));
   res.end();
+  inflight.delete(deviceId);
 }

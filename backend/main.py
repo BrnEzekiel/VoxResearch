@@ -1,15 +1,42 @@
-from fastapi import FastAPI, HTTPException, Request
+from fastapi import FastAPI, HTTPException, Request, BackgroundTasks
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 from dotenv import load_dotenv
 import base64
+import hashlib
 import httpx
 import json
 import re
 import os
+import time
 
 load_dotenv()
+
+# Shared answer cache (local-dev parity with the serverless function).
+_CACHE_TTL = 7 * 24 * 3600
+_CACHE_MAX = 200
+_ANSWER_CACHE = {}
+
+
+def _cache_key(query, language, length):
+    norm = " ".join(str(query or "").lower().strip().split())
+    return hashlib.sha256(f"{language}|{length}|{norm}".encode()).hexdigest()
+
+
+def _cache_get(key):
+    v = _ANSWER_CACHE.get(key)
+    if not v or time.time() - v["ts"] > _CACHE_TTL:
+        _ANSWER_CACHE.pop(key, None)
+        return None
+    return v
+
+
+def _store_cache(key, collect):
+    if collect.get("text"):
+        _ANSWER_CACHE[key] = {"text": collect["text"], "cites": collect.get("cites", []), "ts": time.time()}
+        while len(_ANSWER_CACHE) > _CACHE_MAX:
+            _ANSWER_CACHE.pop(next(iter(_ANSWER_CACHE)))
 
 app = FastAPI(title="VoxResearch API")
 
@@ -41,7 +68,7 @@ class QueryRequest(BaseModel):
     length: str = "Detailed"
 
 
-async def stream_research(query: str, context: list = [], language: str = "English", length: str = "Detailed"):
+async def stream_research(query: str, context: list = [], language: str = "English", length: str = "Detailed", _collect=None):
     """Stream SSE events: token chunks, then citations, then related questions."""
     length_instruction = {
         "Brief": "Answer in 2-3 sentences only.",
@@ -169,16 +196,36 @@ async def stream_research(query: str, context: list = [], language: str = "Engli
     except Exception:
         pass
 
+    if _collect is not None:
+        _collect["text"] = full_text
+        _collect["cites"] = citations
     yield f"data: {json.dumps({'type': 'related', 'data': related})}\n\n"
     yield f"data: {json.dumps({'type': 'done'})}\n\n"
 
 
 @app.post("/research")
-async def research(req: QueryRequest):
+async def research(req: QueryRequest, background_tasks: BackgroundTasks):
+    if len(req.query or "") > 4000:
+        raise HTTPException(status_code=400, detail="Question too long (max 4000 characters).")
+    key = _cache_key(req.query, req.language, req.length)
+    hit = _cache_get(key)
+    if hit:
+        async def hitgen():
+            yield f"data: {json.dumps({'type': 'token', 'text': hit['text']})}\n\n"
+            if hit["cites"]:
+                yield f"data: {json.dumps({'type': 'citations', 'data': hit['cites']})}\n\n"
+            yield f"data: {json.dumps({'type': 'done'})}\n\n"
+        return StreamingResponse(
+            hitgen(),
+            media_type="text/event-stream",
+            headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no", "X-Cache": "HIT"},
+        )
+    collect = {}
+    background_tasks.add_task(_store_cache, key, collect)
     return StreamingResponse(
-        stream_research(req.query, req.context, req.language, req.length),
+        stream_research(req.query, req.context, req.language, req.length, _collect=collect),
         media_type="text/event-stream",
-        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no", "X-Cache": "MISS"},
     )
 
 

@@ -15,6 +15,7 @@ import NeuralBg from "./components/NeuralBg";
 import { exportConversationPDF } from "./utils/exportPDF";
 import { getDeviceId, getMessagesLeft, getUsedCount, setUsedCount, recordMessage, reconcileQuota, MESSAGE_LIMIT } from "./utils/deviceQuota";
 import { blobToWavDataUrl } from "./utils/audioToWav";
+import { cacheGet, cacheSet } from "./utils/answerCache";
 
 const SUGGESTIONS = [
   "What is quantum computing?","Latest news in artificial intelligence",
@@ -217,6 +218,23 @@ export default function App() {
       setError(`👻 Your ${MESSAGE_LIMIT} treats are all gone — this device is out of free messages.`);
       return;
     }
+    // Device cache: instant free replay, never touches AI or quota.
+    if (!isCompare && !backendOverride && !attachment) {
+      const hit = cacheGet(q, language, answerLength);
+      if (hit) {
+        setSuggestions([]);
+        setQuery("");
+        setError(null);
+        const turnId = Date.now();
+        updateTurns(prev => [...prev, {
+          id: turnId, query: q, answer: hit.answer, streaming: "",
+          citations: hit.citations || [], related: [],
+          grounded: (hit.citations || []).length > 0, cached: true,
+        }]);
+        setTimeout(() => inputRef.current?.focus(), 100);
+        return;
+      }
+    }
     setSuggestions([]);
     if (!isCompare) setQuery("");
     setLoading(true); setError(null);
@@ -241,9 +259,13 @@ export default function App() {
       ? fn => setCompareTurns(prev => prev.map(t => t.id === turnId ? fn(t) : t))
       : fn => updateTurns(prev => prev.map(t => t.id === turnId ? fn(t) : t));
     // Count the message once real content arrives (failed sends stay free).
+    // Server-cached answers are free too.
     let counted = false;
+    let serverCached = false;
+    let fullText = "";
+    let seenCitations = [];
     const countOnce = () => {
-      if (!counted) { counted = true; setQuotaLeft(recordMessage()); }
+      if (!counted && !serverCached) { counted = true; setQuotaLeft(recordMessage()); }
     };
     // Batch token renders (~8fps): re-rendering the full answer on every
     // token melts weak phone CPUs. Control events always flush first.
@@ -254,6 +276,7 @@ export default function App() {
       const chunk = pendingText;
       pendingText = "";
       lastFlush = Date.now();
+      fullText += chunk;
       setter(t => ({ ...t, streaming: (t.streaming || "") + chunk }));
     };
 
@@ -272,6 +295,7 @@ export default function App() {
         throw new Error(msg);
       }
       if (!res.ok) throw new Error(await res.text());
+      serverCached = res.headers.get("x-cache") === "HIT";
       // Server count wins: adopt it when higher than local.
       const serverLeft = res.headers.get("x-quota-left");
       if (serverLeft !== null) {
@@ -301,14 +325,18 @@ export default function App() {
               pendingText += msg.text || "";
               if (Date.now() - lastFlush >= 120) flushTokens();
             }
-            else if (msg.type === "citations") { flushTokens(); setter(t => ({ ...t, citations: msg.data, grounded: true })); }
+            else if (msg.type === "citations") { flushTokens(); seenCitations = msg.data || []; setter(t => ({ ...t, citations: seenCitations, grounded: true })); }
             else if (msg.type === "related") { countOnce(); flushTokens(); setter(t => ({ ...t, related: msg.data })); }
-            else if (msg.type === "done") { countOnce(); flushTokens(); setter(t => ({ ...t, answer: t.streaming, streaming: "" })); }
+            else if (msg.type === "done") { countOnce(); flushTokens(); setter(t => ({ ...t, answer: t.streaming, streaming: "", cached: serverCached })); }
             else if (msg.type === "error") throw new Error(msg.text);
           } catch (_) {}
         }
       }
       flushTokens();
+      // Bank fresh answers on-device for instant free replays.
+      if (!isCompare && !backendOverride && fullText && !abortRef.current?.signal?.aborted) {
+        cacheSet(q, language, answerLength, fullText, seenCitations);
+      }
     } catch (e) {
       if (e.name === "AbortError") {
         // User hit Stop — keep what streamed so far as the final answer.
@@ -819,6 +847,7 @@ const TurnBlock = memo(function TurnBlock({ turn, dark, accent, userBubble, onRe
           onVerify={() => onVerify(turn)}
           onFollowUp={text => onFollowUp(turn, text)}
           onAskViz={(label, summary) => onAskViz(turn, label, summary)}
+          cached={turn.cached}
         />
       )}
 

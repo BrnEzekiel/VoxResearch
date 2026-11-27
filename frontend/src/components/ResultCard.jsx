@@ -9,7 +9,7 @@ function ResultCard({
   answer, citations, relatedQuestions, grounded, onRelated,
   onShare, shareMsg, dark, query, onSaveMd, wordCount,
   isStreaming, rating, onRate, onReSearch, forceCollapsed,
-  onVerify, onFollowUp, onAskViz,
+  onVerify, onFollowUp, onAskViz, cached,
 }) {
   const [copied, setCopied] = useState(false);
   const [turnCopied, setTurnCopied] = useState(false);
@@ -113,6 +113,7 @@ function ResultCard({
           </span>
           {citations.length > 0 && <span className={`text-xs ${mutedColor}`}>{citations.length} source{citations.length !== 1 ? "s" : ""}</span>}
           <span className={`text-xs ${mutedColor}`}>{grounded ? "⚡ muse-spark-1.3 · live" : "🧠 from memory"}</span>
+          {cached && <span className="text-xs px-2 py-0.5 rounded-full bg-orange-100 text-orange-600 font-semibold">⚡ instant · free</span>}
           {wordCount > 0 && <span className={`text-xs ${mutedColor}`}>{wordCount} words · {readMins} min read</span>}
         </div>
         <div className="flex items-center gap-3 flex-wrap">
@@ -288,6 +289,7 @@ function cardEqual(p, n) {
     && p.wordCount === n.wordCount
     && p.isStreaming === n.isStreaming
     && p.rating === n.rating
+    && p.cached === n.cached
     && p.forceCollapsed === n.forceCollapsed;
 }
 
