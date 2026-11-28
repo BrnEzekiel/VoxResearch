@@ -17,7 +17,7 @@ const inflight = new Set();
 
 function cacheKey(query, language, length) {
   const norm = String(query || "").toLowerCase().trim().replace(/\s+/g, " ");
-  return createHash("sha256").update(`${language || "English"}|${length || "Detailed"}|${norm}`).digest("hex");
+  return createHash("sha256").update(`v2|${language || "English"}|${length || "Detailed"}|${norm}`).digest("hex");
 }
 
 function fresh(v) {
@@ -143,6 +143,21 @@ export default async function handler(req, res) {
   }
   inflight.add(deviceId);
 
+  // IP backstop: binds browsers/devices behind one network together
+  // (30 AI answers per IP per day; cached repeats never count).
+  const fwd = ((req.headers && req.headers["x-forwarded-for"]) || "").split(",")[0].trim();
+  const day = new Date().toISOString().slice(0, 10);
+  const ipKey = `ip:${createHash("sha256").update(fwd || "unknown").digest("hex").slice(0, 24)}:${day}`;
+  const IP_DAILY_CAP = 30;
+  let ipUsed = 0;
+  try { ipUsed = await quotaUsed(ipKey); } catch { ipUsed = 0; }
+  if (ipUsed >= IP_DAILY_CAP) {
+    res.writeHead(429, { "Content-Type": "application/json", "Retry-After": "3600", ...corsHeaders(req) });
+    res.end(JSON.stringify({ error: "This network has used today's shared research budget — try again tomorrow." }));
+    inflight.delete(deviceId);
+    return;
+  }
+
   // Shared cache FIRST: hits are free even at zero quota.
   const cKey = cacheKey(query, language, length);
   const hit = await cacheGet(cKey);
@@ -184,7 +199,7 @@ export default async function handler(req, res) {
   const history = (context || []).slice(-3).map((m) => `Previous Q: ${m.content || ""}`).join("\n");
   const historyBlock = history ? `Conversation so far:\n${history}\n\n` : "";
   const vizHint = "When the answer involves a process, flow, timeline, hierarchy, or sequence, also include a ```mermaid diagram for it.";
-  const citeHint = "Use web search for factual questions and attach a source citation to every statistic, ranking, date and factual claim in your answer.";
+  const citeHint = "You MUST call web_search before answering. Never answer from memory. Every answer MUST include at least 2 source citations attached to the facts they support.";
   const fullInput = `${langInstruction} ${lengthInstruction}\n\n${historyBlock}${vizHint}\n${citeHint}\n\nQuestion: ${query}`.trim();
 
   res.writeHead(200, {
@@ -335,6 +350,7 @@ export default async function handler(req, res) {
   await cacheSet(cKey, fullAnswer, citations);
   // Persist the count only for delivered answers (failures stay free).
   await quotaSet(deviceId, used + 1);
+  try { await quotaSet(ipKey, ipUsed + 1); } catch {}
   res.write(sse({ type: "related", data: related }));
   res.write(sse({ type: "done" }));
   res.end();

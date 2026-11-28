@@ -186,6 +186,20 @@ export default function App() {
   useEffect(() => { localStorage.setItem("vox_accent", accentKey); }, [accentKey]);
   useEffect(() => { localStorage.setItem("vox_fontsize", fontSize); }, [fontSize]);
   useEffect(() => { try { localStorage.setItem("vox_templates", JSON.stringify(customTemplates)); } catch {} }, [customTemplates]);
+
+  // Truth on load: ask the server what this device really has left, so a
+  // wiped browser immediately shows the real count instead of a fresh 10.
+  useEffect(() => {
+    const base = import.meta.env.DEV ? "http://127.0.0.1:8000" : "";
+    fetch(`${base}/api/quota?deviceId=${encodeURIComponent(getDeviceId())}`)
+      .then((r) => (r.ok ? r.json() : null))
+      .then((d) => {
+        if (d && typeof d.left === "number") {
+          setQuotaLeft(MESSAGE_LIMIT - setUsedCount(MESSAGE_LIMIT - Math.max(0, d.left)));
+        }
+      })
+      .catch(() => {});
+  }, []);
   // Applied to <html> so every rem-based size in the app scales together.
   useEffect(() => { document.documentElement.style.fontSize = `${fontSize}px`; }, [fontSize]);
   useEffect(() => {

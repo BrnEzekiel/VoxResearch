@@ -21,7 +21,7 @@ _ANSWER_CACHE = {}
 
 def _cache_key(query, language, length):
     norm = " ".join(str(query or "").lower().strip().split())
-    return hashlib.sha256(f"{language}|{length}|{norm}".encode()).hexdigest()
+    return hashlib.sha256(f"v2|{language}|{length}|{norm}".encode()).hexdigest()
 
 
 def _cache_get(key):
@@ -79,7 +79,7 @@ async def stream_research(query: str, context: list = [], language: str = "Engli
     history = "\n".join(f"Previous Q: {m.get('content', '')}" for m in (context or [])[-3:])
     history_block = f"Conversation so far:\n{history}\n\n" if history else ""
     viz_hint = "When the answer involves a process, flow, timeline, hierarchy, or sequence, also include a ```mermaid diagram for it."
-    cite_hint = "Use web search for factual questions and attach a source citation to every statistic, ranking, date and factual claim in your answer."
+    cite_hint = "You MUST call web_search before answering. Never answer from memory. Every answer MUST include at least 2 source citations attached to the facts they support."
     full_input = f"{lang_instruction} {length_instruction}\n\n{history_block}{viz_hint}\n{cite_hint}\n\nQuestion: {query}".strip()
 
     payload = {
